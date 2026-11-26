@@ -29,6 +29,11 @@
   #fuel-fill { background: linear-gradient(90deg, #ffb347, #ffd98f); width: 100%; }
   #hull-fill { background: linear-gradient(90deg, #7dd87d, #b7f0a8); width: 100%; }
   #hud-message { left: 50%; bottom: 17%; transform: translateX(-50%); font-size: 32px; font-weight: 800; letter-spacing: 1px; text-align: center; text-shadow: 0 2px 10px rgba(0,0,0,0.75); opacity: 0; transition: opacity 0.25s; white-space: nowrap; }
+  #hud-flash { inset: 0; background: #fff; opacity: 0; z-index: 8; }
+  #hud-photos { right: 18px; top: 158px; display: flex; flex-direction: column; gap: 8px; z-index: 6; }
+  #hud-photos .photo { position: relative; width: 144px; height: 81px; border: 2px solid #fff7e8; border-radius: 4px; overflow: hidden; background: #000; box-shadow: 0 4px 14px rgba(0,0,0,0.5); }
+  #hud-photos .photo canvas { width: 100%; height: 100%; display: block; }
+  #hud-photos .photo-tag { position: absolute; right: 5px; bottom: 3px; font-size: 14px; font-weight: 800; color: #ffd98f; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
   #hud-marker { width: 30px; height: 30px; margin: -15px 0 0 -15px; z-index: 6; }
   #hud-marker .diamond { width: 20px; height: 20px; margin: 5px; border: 3px solid #ffe9a8; transform: rotate(45deg); box-shadow: 0 0 10px rgba(255, 190, 60, 0.9), inset 0 0 6px rgba(255, 190, 60, 0.8); }
   #hud-marker .dist { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); font-size: 15px; font-weight: 800; text-shadow: 0 1px 5px rgba(0,0,0,0.8); white-space: nowrap; }
@@ -82,6 +87,8 @@
   <div class="label"><span>HULL</span><span id="hud-hull-pct">100%</span></div>
   <div class="bar"><div class="fill" id="hull-fill"></div></div>
 </div>
+<div class="hud" id="hud-flash"></div>
+<div class="hud" id="hud-photos"></div>
 <div class="hud" id="hud-message"></div>
 <div class="hud" id="hud-marker" style="display:none;"><div class="diamond"></div><div class="dist" id="hud-marker-dist"></div></div>
 <canvas id="panel" width="880" height="268"></canvas>
@@ -89,11 +96,12 @@
 <div class="screen" id="screen-title">
   <div class="card">
     <h1>GOLDEN ISLES COURIER</h1>
-    <h2>Sunset mail runs over the Aurelia Isles — rings, deliveries and one restless volcano.</h2>
+    <h2>Sunset mail runs over the Aurelia Isles — rings, deliveries, harbour photos and one restless volcano.</h2>
     <div class="missions">
       <button class="mission-btn" id="btn-mission-1"><div class="m-name">1 · Ring Run</div><div class="m-desc">Thread eight glowing rings around Palma and the near islets against the clock.</div><span class="m-key">PRESS 1</span></button>
       <button class="mission-btn" id="btn-mission-2"><div class="m-name">2 · Island Delivery</div><div class="m-desc">Carry the mail pouch from Palma Field to Farrel Isle and land it gently on their strip.</div><span class="m-key">PRESS 2</span></button>
       <button class="mission-btn" id="btn-mission-3"><div class="m-name">3 · Volcano Circuit</div><div class="m-desc">Six rings around Mount Cindera, the last one over the crater's glowing heart.</div><span class="m-key">PRESS 3</span></button>
+      <button class="mission-btn" id="btn-mission-4"><div class="m-name">4 · Harbor Photo Run</div><div class="m-desc">Three photo gates over Port Aurelia's harbour — fly them low, frame the shot, mind the masts.</div><span class="m-key">PRESS 4</span></button>
     </div>
     <p class="controls"><b>W / S</b> throttle up / down &nbsp;·&nbsp; <b>↑ / ↓</b> pitch &nbsp;·&nbsp; <b>← / →</b> or <b>A / D</b> bank &amp; turn &nbsp;·&nbsp; <b>Space</b> wheel brakes<br>
     <b>C</b> cockpit / chase camera &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; Land slow, land gentle: the mail hates a bent aeroplane.</p>

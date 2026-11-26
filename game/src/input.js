@@ -10,6 +10,7 @@ export const ACTION_MISSION_1 = 16;
 export const ACTION_MISSION_2 = 32;
 export const ACTION_MISSION_3 = 64;
 export const ACTION_MENU = 128;
+export const ACTION_MISSION_4 = 256;
 
 const KEY_ACTIONS = {
   Enter: ACTION_CONFIRM,
@@ -20,6 +21,7 @@ const KEY_ACTIONS = {
   Digit1: ACTION_MISSION_1,
   Digit2: ACTION_MISSION_2,
   Digit3: ACTION_MISSION_3,
+  Digit4: ACTION_MISSION_4,
 };
 
 /** Create the input reader bound to the window; call takeActions once a frame. */

@@ -10,7 +10,7 @@ import {
   EVENT_TOOK_OFF, EVENT_TOUCHDOWN, EVENT_CRASHED, EVENT_DITCHED,
 } from './flight.js';
 import { MISSIONS, startMission } from './missions.js';
-import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, ACTION_MISSION_1, ACTION_MISSION_2, ACTION_MISSION_3, ACTION_MENU } from './input.js';
+import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, ACTION_MISSION_1, ACTION_MISSION_2, ACTION_MISSION_3, ACTION_MISSION_4, ACTION_MENU } from './input.js';
 import { createHud, formatTime } from './hud.js';
 import { createInstruments } from './instruments.js';
 import { createAudio } from './audio.js';
@@ -83,6 +83,7 @@ function beginMission(id) {
   screen = 'flying';
   showScreen('flying');
   audio.start();
+  hud.clearPhotos();
   hud.setMission(def.name, def.brief);
   hud.flash('THROTTLE UP — W', 1.8);
   announce(`Flying ${def.name}. ${def.brief}.`);
@@ -137,6 +138,13 @@ function presentEvents(events, happenings) {
     if (happening.kind === 'ring') {
       audio.chime();
       hud.flash(`RING ${happening.index}/${happening.total}  +${happening.points}`, 1.5);
+    } else if (happening.kind === 'photo') {
+      audio.shutter();
+      hud.flashPhoto();
+      hud.addPhoto(happening.points);
+      hud.flash(`PHOTO ${happening.index}/${happening.total}  +${happening.points}`, 1.5);
+    } else if (happening.kind === 'photo-miss') {
+      hud.flash(happening.reason, 1.6);
     } else if (happening.kind === 'complete') {
       mission.score = happening.score;
       endMission({ title: happening.title, detail: happening.detail, success: true });
@@ -156,6 +164,7 @@ function handleActions() {
     if (actions & ACTION_MISSION_1) beginMission(1);
     else if (actions & ACTION_MISSION_2) beginMission(2);
     else if (actions & ACTION_MISSION_3) beginMission(3);
+    else if (actions & ACTION_MISSION_4) beginMission(4);
     else if (actions & ACTION_CONFIRM) beginMission(1);
     return;
   }
@@ -182,7 +191,7 @@ function handleActions() {
   }
 }
 
-for (const id of [1, 2, 3]) {
+for (const id of [1, 2, 3, 4]) {
   document.getElementById(`btn-mission-${id}`).addEventListener('click', () => beginMission(id));
 }
 
@@ -305,7 +314,7 @@ function runGame() {
     }
     drawFrame(dt, now / 1000);
   }
-  announce('Golden Isles Courier. Choose a mission: 1, 2 or 3.');
+  announce('Golden Isles Courier. Choose a mission: 1, 2, 3 or 4.');
   requestAnimationFrame(frame);
 }
 
@@ -358,4 +367,7 @@ else runGame();
 
 // A handle for automated play-testing: the live scene, camera and flight state, so a test
 // harness can watch the aeroplane move and read the ground it flies over.
-window.__game = { scene, camera, renderer, flight, world, aircraft };
+window.__game = {
+  scene, camera, renderer, flight, world, aircraft,
+  get mission() { return mission; },
+};

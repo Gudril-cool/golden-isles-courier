@@ -1,7 +1,9 @@
 // The heads-up display: DOM panels over the 3D view. ALT, SPD and HDG are big tabular numerals
 // on dark glass so they still read when the whole frame is shrunk to a judge's contact sheet;
 // below them sit the fuel and hull bars, the mission line, the score, a centre message that
-// flashes landings and warnings, and a diamond marker that points at the next objective.
+// flashes landings and warnings, and a diamond marker that points at the next objective. On the
+// right edge hangs the photo strip: on the Harbor Photo Run, every frame the pilot snaps is
+// pinned there as a thumbnail of the game's own canvas, with the points it earned.
 import { altitudeFeet, headingDegrees, speedKnots } from './flight.js';
 
 function el(id) {
@@ -30,6 +32,8 @@ export function createHud() {
   const message = el('hud-message');
   const marker = el('hud-marker');
   const markerDist = el('hud-marker-dist');
+  const photoStrip = el('hud-photos');
+  const flashEl = el('hud-flash');
   let messageUntil = 0;
 
   return {
@@ -62,6 +66,34 @@ export function createHud() {
       message.textContent = text;
       message.style.opacity = '1';
       messageUntil = performance.now() + seconds * 1000;
+    },
+    /** White the frame out for a heartbeat, the way a shutter feels from the cockpit. */
+    flashPhoto() {
+      flashEl.style.transition = 'none';
+      flashEl.style.opacity = '0.8';
+      requestAnimationFrame(() => {
+        flashEl.style.transition = 'opacity 0.45s';
+        flashEl.style.opacity = '0';
+      });
+    },
+    /** Pin the frame just taken to the HUD edge: a thumbnail of the game's own canvas and its score. */
+    addPhoto(points) {
+      const shot = document.createElement('canvas');
+      shot.width = 144;
+      shot.height = 81;
+      shot.getContext('2d').drawImage(el('scene'), 0, 0, shot.width, shot.height);
+      const frame = document.createElement('div');
+      frame.className = 'photo';
+      frame.appendChild(shot);
+      const tag = document.createElement('div');
+      tag.className = 'photo-tag';
+      tag.textContent = `+${points}`;
+      frame.appendChild(tag);
+      photoStrip.appendChild(frame);
+    },
+    /** Clear the photo strip when a new sortie begins. */
+    clearPhotos() {
+      photoStrip.innerHTML = '';
     },
     /** Keep the flash timer honest; call every frame. */
     tick() {

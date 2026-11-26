@@ -3,9 +3,9 @@
 // (game/index.html and its ES modules, three.js vendored under game/vendor/, no network request),
 // and the program hands it in. It copies game/ and screenshots/ from beside this file to /output
 // and writes /output/dossier.json, the summary the judge reads, with the vendored make.fun
-// library. The game: a sunset courier flight over a low-poly archipelago — three missions
-// (ring runs and an island mail delivery), a working cockpit panel, fuel and hull to manage,
-// and landings that are judged as firmly as they are flown.
+// library. The game: a sunset courier flight over a low-poly archipelago — four missions
+// (ring runs, an island mail delivery and a harbour photo run), a working cockpit panel,
+// fuel and hull to manage, and landings that are judged as firmly as they are flown.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:

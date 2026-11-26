@@ -1,13 +1,14 @@
 // The courier plane, built entirely from three.js primitives: a cream-and-red high-wing
-// taildragger with a spinning propeller, glazed canopy, fixed gear and the mail pouch strapped
-// to its flank. No model files — every surface is geometry the code describes.
+// taildragger with a spinning propeller that dissolves into a blur disc as the revs climb, a
+// tinted canopy, fixed gear, navigation lights with a double-blink tail strobe, and the mail
+// pouch strapped to its flank. No model files — every surface is geometry the code describes.
 import * as THREE from 'three';
 
 const PAINT = {
   cream: new THREE.MeshStandardMaterial({ color: 0xf0e3c2, roughness: 0.5, metalness: 0.08 }),
   red: new THREE.MeshStandardMaterial({ color: 0xc23b2e, roughness: 0.5, metalness: 0.08 }),
   dark: new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.6, metalness: 0.3 }),
-  glass: new THREE.MeshStandardMaterial({ color: 0x9fd4e8, roughness: 0.12, metalness: 0.4, emissive: 0x3a2c14, emissiveIntensity: 0.35 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0x5f96b4, roughness: 0.08, metalness: 0.55, emissive: 0x3a2c14, emissiveIntensity: 0.25 }),
   tyre: new THREE.MeshStandardMaterial({ color: 0x1d1f22, roughness: 0.95 }),
 };
 
@@ -60,11 +61,28 @@ export function createAircraft() {
   tailWheelGeometry.rotateZ(Math.PI / 2);
   group.add(part(tailWheelGeometry, PAINT.tyre, 0, -0.72, 3.3));
 
-  // Propeller: spinner cone, two blades and a faint blur disc that fades in with the throttle.
+  // Navigation lights: port red, starboard green, and a white strobe on the fin that
+  // double-blinks. Small basic-material beads — they read as lamps at any distance.
+  const navLight = (color, x) => {
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), new THREE.MeshBasicMaterial({ color }));
+    lamp.position.set(x, 0.62, -0.35);
+    return lamp;
+  };
+  group.add(navLight(0xff2a1e, -5.72));
+  group.add(navLight(0x2aff5a, 5.72));
+  const strobe = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), new THREE.MeshBasicMaterial({ color: 0x555a60 }));
+  strobe.position.set(0, 1.78, 3.15);
+  group.add(strobe);
+
+  // Propeller: spinner cone, two blades and a translucent blur disc with a brighter blade-tip
+  // rim. The disc fades in with the throttle while the solid blades ghost away, the way a real
+  // prop dissolves into its arc as the revs climb. The blades get their own material so the
+  // fade never touches the gear legs that share the airframe's dark paint.
   const propeller = new THREE.Group();
+  const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.6, metalness: 0.3, transparent: true });
   const bladeGeometry = new THREE.BoxGeometry(0.26, 2.9, 0.07);
-  const bladeA = part(bladeGeometry, PAINT.dark, 0, 0, 0);
-  const bladeB = part(bladeGeometry, PAINT.dark, 0, 0, 0, 0, 0, Math.PI / 2);
+  const bladeA = part(bladeGeometry, bladeMaterial, 0, 0, 0);
+  const bladeB = part(bladeGeometry, bladeMaterial, 0, 0, 0, 0, 0, Math.PI / 2);
   propeller.add(bladeA, bladeB);
   const spinnerGeometry = new THREE.ConeGeometry(0.3, 0.8, 12);
   spinnerGeometry.rotateX(-Math.PI / 2);
@@ -72,20 +90,35 @@ export function createAircraft() {
   propeller.add(spinner);
   const blur = new THREE.Mesh(
     new THREE.CircleGeometry(1.5, 24),
-    new THREE.MeshBasicMaterial({ color: 0xdddddd, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ color: 0xe8e2d4, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }),
   );
-  propeller.add(blur);
+  const blurRim = new THREE.Mesh(
+    new THREE.RingGeometry(1.33, 1.5, 24),
+    new THREE.MeshBasicMaterial({ color: 0xf4efe2, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  propeller.add(blur, blurRim);
   propeller.position.set(0, 0, -3.1);
   group.add(propeller);
 
   let cockpitView = false;
+  let lightTime = 0;
   return {
     group,
     /** Spin the propeller for this frame; the blur disc takes over as the revs climb. */
     spinPropeller(dt, throttle) {
       propeller.rotation.z += dt * (4 + throttle * 55);
-      const spun = THREE.MathUtils.clamp((throttle - 0.25) * 0.35, 0, 0.16);
-      blur.material.opacity = cockpitView ? Math.max(spun, 0.13) : spun;
+      const spun = THREE.MathUtils.clamp((throttle - 0.18) * 1.6, 0, 1);
+      blur.material.opacity = spun * (cockpitView ? 0.3 : 0.22);
+      if (cockpitView && spun === 0) blur.material.opacity = 0.13;
+      blurRim.material.opacity = spun * 0.38;
+      bladeMaterial.opacity = 1 - spun * 0.8;
+      // The tail strobe double-blinks on a 1.4 s cycle, lit or idle.
+      lightTime += dt;
+      const phase = lightTime % 1.4;
+      const strobeOn = phase < 0.07 || (phase > 0.18 && phase < 0.25);
+      strobe.material.color.set(strobeOn ? 0xffffff : 0x555a60);
+      const pulse = strobeOn ? 1.5 : 1;
+      strobe.scale.set(pulse, pulse, pulse);
     },
     /**
      * Switch between the outside and the pilot's seat: from inside, the canopy glass and the

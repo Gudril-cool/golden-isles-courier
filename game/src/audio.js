@@ -76,6 +76,13 @@ export function createAudio() {
       tone(1318, t, 0.22, 'sine', 0.15);
       tone(1760, t + 0.07, 0.3, 'sine', 0.13);
     },
+    /** A photo taken: two hard shutter clicks, a beat apart. */
+    shutter() {
+      if (!context) return;
+      const t = context.currentTime;
+      tone(2100, t, 0.05, 'square', 0.1);
+      tone(1250, t + 0.08, 0.07, 'square', 0.09);
+    },
     /** Ground contact: a noise thud whose weight follows the arrival's firmness. */
     thud(hardness) {
       if (!context || muted) return;

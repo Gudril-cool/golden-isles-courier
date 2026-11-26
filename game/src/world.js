@@ -1,6 +1,7 @@
 // The Aurelia Isles: a seeded, golden-hour archipelago built with three.js — Palma with its
 // hilltop field and coastal town, the volcano Mount Cindera, Farrel Isle across the water, and
-// a scatter of islets. One analytic height function grows the terrain mesh, places every
+// a scatter of islets. The low sun draws a glitter path on the sea, and boats ride at anchor in
+// Port Aurelia's harbour. One analytic height function grows the terrain mesh, places every
 // building and tree, and answers the flight model's ground queries, so what you see is exactly
 // what you can hit.
 import * as THREE from 'three';
@@ -453,6 +454,124 @@ function buildClouds(random) {
 }
 
 /**
+ * The sun's glitter path on the sea: a long additive sheet lying on the water along the sun's
+ * azimuth, textured with a canvas of sparkle dashes — brightest down its centre line, fading
+ * across its width and along its length. It is the road of light a low sun draws on open water.
+ */
+function buildGlitter(sunDir) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const across = ctx.createLinearGradient(0, 0, 0, 128);
+  across.addColorStop(0, 'rgba(255, 190, 110, 0)');
+  across.addColorStop(0.5, 'rgba(255, 205, 130, 0.5)');
+  across.addColorStop(1, 'rgba(255, 190, 110, 0)');
+  ctx.fillStyle = across;
+  ctx.fillRect(0, 0, 512, 128);
+  const sparkle = createRandom(1234567);
+  for (let i = 0; i < 300; i += 1) {
+    const x = sparkle() * 512;
+    const y = 12 + sparkle() * 104;
+    const centre = 1 - Math.abs(y - 64) / 64;
+    const alpha = 0.1 + sparkle() * 0.5 * centre;
+    ctx.fillStyle = `rgba(255, 232, 185, ${alpha.toFixed(2)})`;
+    ctx.fillRect(x, y, 4 + sparkle() * 22, 1.6);
+  }
+  ctx.globalCompositeOperation = 'destination-in';
+  const along = ctx.createLinearGradient(0, 0, 512, 0);
+  along.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  along.addColorStop(0.22, 'rgba(0, 0, 0, 1)');
+  along.addColorStop(0.8, 'rgba(0, 0, 0, 1)');
+  along.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = along;
+  ctx.fillRect(0, 0, 512, 128);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.MeshBasicMaterial({
+    map: texture, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  const geometry = new THREE.PlaneGeometry(6800, 950);
+  geometry.rotateX(-Math.PI / 2);
+  const mesh = new THREE.Mesh(geometry, material);
+  const flat = Math.hypot(sunDir.x, sunDir.z);
+  const dirX = sunDir.x / flat;
+  const dirZ = sunDir.z / flat;
+  mesh.rotation.y = Math.atan2(-dirZ, dirX);
+  mesh.position.set(dirX * 2500, 0.3, dirZ * 2500);
+  return { mesh, material };
+}
+
+/**
+ * One harbour boat at anchor: a simple hull with a wedge bow, a cabin, a mast, and the pale
+ * wash of water it sits in — a soft foam patch under the hull and a short wake streak astern,
+ * the mark of a boat swinging gently against its mooring in the evening tide.
+ */
+function buildBoat(hullColour, trimColour, headingDeg) {
+  const group = new THREE.Group();
+  const hullMaterial = new THREE.MeshStandardMaterial({ color: hullColour, roughness: 0.7 });
+  const trimMaterial = new THREE.MeshStandardMaterial({ color: trimColour, roughness: 0.6 });
+  const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xf2ede2, roughness: 0.8 });
+  const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.85 });
+
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(8.4, 1.5, 2.8), hullMaterial);
+  hull.position.y = 0.55;
+  group.add(hull);
+  const bowGeometry = new THREE.CylinderGeometry(0.02, 1.42, 3.4, 4);
+  bowGeometry.rotateY(Math.PI / 4);
+  bowGeometry.rotateZ(-Math.PI / 2);
+  const bow = new THREE.Mesh(bowGeometry, hullMaterial);
+  bow.position.set(5.8, 0.55, 0);
+  bow.scale.set(1, 1, 1.45);
+  group.add(bow);
+  const gunwale = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.28, 3.0), trimMaterial);
+  gunwale.position.y = 1.38;
+  group.add(gunwale);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.3, 1.9), whiteMaterial);
+  cabin.position.set(-0.6, 2.1, 0);
+  group.add(cabin);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 5.2, 6), darkMaterial);
+  mast.position.set(1.6, 3.4, 0);
+  group.add(mast);
+
+  const washMaterial = new THREE.MeshBasicMaterial({ color: 0xdff2f2, transparent: true, opacity: 0.26, depthWrite: false });
+  const foam = new THREE.Mesh(new THREE.CircleGeometry(5.6, 20), washMaterial);
+  foam.rotation.x = -Math.PI / 2;
+  foam.position.y = 0.14;
+  foam.scale.set(1.25, 0.62, 1);
+  group.add(foam);
+  const wake = new THREE.Mesh(new THREE.PlaneGeometry(17, 4.6), new THREE.MeshBasicMaterial({
+    color: 0xdff2f2, transparent: true, opacity: 0.17, depthWrite: false,
+  }));
+  wake.rotation.x = -Math.PI / 2;
+  wake.rotation.z = Math.PI;
+  wake.position.set(-12.4, 0.13, 0);
+  group.add(wake);
+
+  group.rotation.y = (-headingDeg * Math.PI) / 180;
+  return group;
+}
+
+/** The boats at anchor in Port Aurelia's harbour, each with its mooring phase for the bob. */
+function buildHarbour() {
+  const group = new THREE.Group();
+  const moorings = [
+    { x: -2800, z: -200, headingDeg: 40, hull: 0xf2ede2, trim: 0xc23b2e },
+    { x: -3000, z: -450, headingDeg: 130, hull: 0xe8dcc0, trim: 0x2e5a7c },
+    { x: -3050, z: -700, headingDeg: 75, hull: 0xf2ede2, trim: 0x2e7c6e },
+    { x: -2950, z: -850, headingDeg: 300, hull: 0xd9c6a5, trim: 0xc23b2e },
+  ];
+  const boats = moorings.map((mooring, i) => {
+    const boat = buildBoat(mooring.hull, mooring.trim, mooring.headingDeg);
+    boat.position.set(mooring.x, 0, mooring.z);
+    group.add(boat);
+    return { boat, phase: i * 1.7 };
+  });
+  return { group, boats };
+}
+
+/**
  * Build the whole world into the scene. Returns the pieces the game loop animates plus the
  * ground query the flight model flies against.
  */
@@ -479,6 +598,10 @@ export function createWorld(scene, seed) {
   sea.rotation.x = -Math.PI / 2;
   sea.position.y = SEA_LEVEL;
   scene.add(sea);
+  const glitter = buildGlitter(sunDir);
+  scene.add(glitter.mesh);
+  const harbour = buildHarbour();
+  scene.add(harbour.group);
 
   for (const runway of RUNWAYS) scene.add(buildRunway(runway, runway.id === 'palma'));
 
@@ -508,6 +631,12 @@ export function createWorld(scene, seed) {
       clouds.position.x = Math.sin(t * 0.004) * 60 + ((t * 3.2) % 240) - 120;
       lavaLight.intensity = 2600 + Math.sin(t * 7.3) * 500 + Math.sin(t * 13.7) * 280;
       town.lamp.material.emissiveIntensity = 2.6 + Math.sin(t * 2.2) * 1.1;
+      glitter.material.opacity = 0.46 + Math.sin(t * 1.7) * 0.05 + Math.sin(t * 4.3) * 0.03;
+      for (const { boat, phase } of harbour.boats) {
+        boat.position.y = Math.sin(t * 0.8 + phase) * 0.12;
+        boat.rotation.z = Math.sin(t * 0.6 + phase) * 0.02;
+        boat.rotation.x = Math.cos(t * 0.5 + phase) * 0.015;
+      }
     },
   };
 }
