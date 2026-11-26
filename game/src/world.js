@@ -105,8 +105,10 @@ export function getRunway(id) {
 }
 
 /**
- * A canvas texture of a building facade: warm walls and many small windows in a regular grid
- * (or, for the strip style, one ribbon window per floor), some lit for the evening. The windows
+ * A building facade as two canvas textures drawn in one pass: the diffuse map (warm walls
+ * and many small windows in a regular grid, or one ribbon window per floor for the strip
+ * style) and a matching glow map — black but for the lit windows — so the material's emissive
+ * channel can make the lit windows genuinely shine as the golden hour deepens. The windows
  * stay small against the wall — a few big panes read as dice pips from the air, a fine grid of
  * little ones reads as a building.
  */
@@ -117,29 +119,39 @@ function facadeTexture(random, base, litRatio, style) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, 256, 256);
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 256;
+  glowCanvas.height = 256;
+  const glowCtx = glowCanvas.getContext('2d');
+  glowCtx.fillStyle = '#000000';
+  glowCtx.fillRect(0, 0, 256, 256);
   const litShades = ['#ffd98f', '#ffce6b', '#ffe9b0'];
-  const window = () => {
-    if (random() < litRatio) return litShades[Math.floor(random() * litShades.length)];
-    return 'rgba(26, 34, 48, 0.88)';
+  const window = (x, y, w, h) => {
+    if (random() < litRatio) {
+      const shade = litShades[Math.floor(random() * litShades.length)];
+      ctx.fillStyle = shade;
+      ctx.fillRect(x, y, w, h);
+      glowCtx.fillStyle = shade;
+      glowCtx.fillRect(x, y, w, h);
+    } else {
+      ctx.fillStyle = 'rgba(26, 34, 48, 0.88)';
+      ctx.fillRect(x, y, w, h);
+    }
   };
   if (style === 'strips') {
-    for (let row = 0; row < 9; row += 1) {
-      ctx.fillStyle = window();
-      ctx.fillRect(16, 12 + row * 27, 224, 11);
-    }
+    for (let row = 0; row < 9; row += 1) window(16, 12 + row * 27, 224, 11);
   } else {
     for (let row = 0; row < 8; row += 1) {
-      for (let col = 0; col < 6; col += 1) {
-        ctx.fillStyle = window();
-        ctx.fillRect(13 + col * 40, 9 + row * 30, 17, 19);
-      }
+      for (let col = 0; col < 6; col += 1) window(13 + col * 40, 9 + row * 30, 17, 19);
     }
   }
   ctx.fillStyle = 'rgba(60, 40, 25, 0.25)';
   ctx.fillRect(0, 240, 256, 16);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const glow = new THREE.CanvasTexture(glowCanvas);
+  glow.colorSpace = THREE.SRGBColorSpace;
+  return { map, glow };
 }
 
 /** A canvas texture for a runway: dark asphalt, threshold bars, dashes down the centreline. */
@@ -314,9 +326,9 @@ function buildRunway(runway, withBuildings) {
 function buildTown(random) {
   const group = new THREE.Group();
   const facades = [
-    facadeTexture(random, '#d9c6a5', 0.42, 'grid'),
-    facadeTexture(random, '#c9d4d8', 0.34, 'strips'),
-    facadeTexture(random, '#e0b49a', 0.5, 'grid'),
+    facadeTexture(random, '#d9c6a5', 0.55, 'grid'),
+    facadeTexture(random, '#c9d4d8', 0.45, 'strips'),
+    facadeTexture(random, '#e0b49a', 0.62, 'grid'),
   ];
   // Scatter the placements first, so the town can be built as one instanced mesh per facade
   // variant — the buildings genuinely differ — plus one instanced mesh of roof slabs whose
@@ -352,7 +364,13 @@ function buildTown(random) {
     if (own.length === 0) continue;
     const mesh = new THREE.InstancedMesh(
       box,
-      new THREE.MeshStandardMaterial({ map: facades[variant], roughness: 0.9 }),
+      new THREE.MeshStandardMaterial({
+        map: facades[variant].map,
+        emissiveMap: facades[variant].glow,
+        emissive: 0xffc37a,
+        emissiveIntensity: 1.15,
+        roughness: 0.9,
+      }),
       own.length,
     );
     own.forEach((p, i) => {
@@ -394,7 +412,24 @@ function buildTown(random) {
   lighthouse.add(lamp);
   lighthouse.position.set(LANDMARKS.lighthouse.x, baseY, LANDMARKS.lighthouse.z);
   group.add(lighthouse);
-  return { group, lamp };
+
+  // The rotating beam: two translucent cones nose-to-nose at the lamp, sweeping the harbour
+  // and the town shore. Additive and depthless, so they read as light, not as scenery.
+  const beamMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffd9a0, transparent: true, opacity: 0.15,
+    blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, fog: false,
+  });
+  const beamPivot = new THREE.Group();
+  const coneGeometry = new THREE.ConeGeometry(30, 240, 20, 1, true);
+  coneGeometry.translate(0, -120, 0); // apex at the pivot, skirt 240 m out along -Y
+  for (const rz of [Math.PI / 2, -Math.PI / 2]) {
+    const cone = new THREE.Mesh(coneGeometry, beamMaterial);
+    cone.rotation.z = rz; // lay the cone horizontal, one each way
+    beamPivot.add(cone);
+  }
+  beamPivot.position.set(LANDMARKS.lighthouse.x, baseY + 23.6, LANDMARKS.lighthouse.z);
+  group.add(beamPivot);
+  return { group, lamp, beam: beamPivot, beamMaterial };
 }
 
 /** Low-poly pines scattered on the grass, kept clear of the strips and the town. */
@@ -553,7 +588,46 @@ function buildBoat(hullColour, trimColour, headingDeg) {
   return group;
 }
 
-/** The boats at anchor in Port Aurelia's harbour, each with its mooring phase for the bob. */
+/**
+ * A fading wake trail for a boat under way: a long flat sheet astern whose canvas alpha runs
+ * from a bright churn at the stern to nothing at the tail — the road a moving hull writes on
+ * still water, and leaves behind it.
+ */
+function buildWakeTrail() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 256, 0);
+  gradient.addColorStop(0, 'rgba(223, 242, 242, 0)');
+  gradient.addColorStop(0.75, 'rgba(223, 242, 242, 0.13)');
+  gradient.addColorStop(1, 'rgba(223, 242, 242, 0.4)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 32);
+  const across = ctx.createLinearGradient(0, 0, 0, 32);
+  across.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  across.addColorStop(0.3, 'rgba(0, 0, 0, 1)');
+  across.addColorStop(0.7, 'rgba(0, 0, 0, 1)');
+  across.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.fillStyle = across;
+  ctx.fillRect(0, 0, 256, 32);
+  const texture = new THREE.CanvasTexture(canvas);
+  const trail = new THREE.Mesh(
+    new THREE.PlaneGeometry(58, 7.5),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }),
+  );
+  trail.rotation.x = -Math.PI / 2;
+  trail.position.set(-33, 0.12, 0); // astern: the boat's bow is its local +X
+  return trail;
+}
+
+/**
+ * The harbour's boats: four small craft at anchor, one larger coaster anchored off the photo
+ * gates, and the evening ferry under way on its slow loop around the anchorage, trailing its
+ * wake. The anchored boats get a mooring phase each for the bob; the ferry's loop is a pure
+ * function of the clock (see createWorld's update), so staged frames agree with play.
+ */
 function buildHarbour() {
   const group = new THREE.Group();
   const moorings = [
@@ -561,14 +635,66 @@ function buildHarbour() {
     { x: -3000, z: -450, headingDeg: 130, hull: 0xe8dcc0, trim: 0x2e5a7c },
     { x: -3050, z: -700, headingDeg: 75, hull: 0xf2ede2, trim: 0x2e7c6e },
     { x: -2950, z: -850, headingDeg: 300, hull: 0xd9c6a5, trim: 0xc23b2e },
+    { x: -2903, z: -868, headingDeg: 130, hull: 0xf2ede2, trim: 0xc23b2e, scale: 2.3 },
   ];
   const boats = moorings.map((mooring, i) => {
     const boat = buildBoat(mooring.hull, mooring.trim, mooring.headingDeg);
     boat.position.set(mooring.x, 0, mooring.z);
+    if (mooring.scale) boat.scale.setScalar(mooring.scale);
     group.add(boat);
     return { boat, phase: i * 1.7 };
   });
-  return { group, boats };
+  const ferry = buildBoat(0xe8dcc0, 0x2e5a7c, 0);
+  ferry.scale.setScalar(1.6);
+  ferry.add(buildWakeTrail());
+  group.add(ferry);
+  return { group, boats, ferry };
+}
+
+/** The ferry's loop around the anchorage: centre, radii and the angle it makes at time t. */
+const FERRY_LOOP = { x: -3020, z: -540, rx: 130, rz: 240, period: 300, phase: 0.6 };
+
+/** One bird: a slim body cone and two wings that flap about the body's axis. */
+function buildBird(material) {
+  const bird = new THREE.Group();
+  const bodyGeometry = new THREE.ConeGeometry(0.22, 1.7, 5);
+  bodyGeometry.rotateZ(-Math.PI / 2); // nose along local +X
+  bird.add(new THREE.Mesh(bodyGeometry, material));
+  const wingGeometryR = new THREE.PlaneGeometry(0.7, 2.1);
+  wingGeometryR.translate(0, -1.05, 0);
+  wingGeometryR.rotateX(-Math.PI / 2); // span out along +Z
+  const wingR = new THREE.Mesh(wingGeometryR, material);
+  const wingGeometryL = new THREE.PlaneGeometry(0.7, 2.1);
+  wingGeometryL.translate(0, 1.05, 0);
+  wingGeometryL.rotateX(-Math.PI / 2); // span out along -Z
+  const wingL = new THREE.Mesh(wingGeometryL, material);
+  bird.add(wingL, wingR);
+  bird.scale.setScalar(2.4);
+  return { bird, wingL, wingR };
+}
+
+/**
+ * A flock of gulls working a thermal: each bird holds its own circle and phase around a
+ * centre near the coast, wings beating slowly. Positions are a pure function of the clock,
+ * so a staged frame shows the flock where play would.
+ */
+function buildFlock(centre, radius, count, phaseBase) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ color: 0x2e2a26, side: THREE.DoubleSide });
+  const birds = [];
+  for (let i = 0; i < count; i += 1) {
+    const { bird, wingL, wingR } = buildBird(material);
+    group.add(bird);
+    birds.push({
+      bird, wingL, wingR,
+      a0: phaseBase + (i / count) * Math.PI * 2,
+      r: radius * (0.75 + (i % 3) * 0.22),
+      speed: 0.055 + (i % 3) * 0.008,
+      phase: i * 1.31,
+      lift: (i % 3 - 1) * 7,
+    });
+  }
+  return { group, birds, centre };
 }
 
 /**
@@ -622,6 +748,11 @@ export function createWorld(scene, seed) {
   scene.add(buildTrees(random));
   const clouds = buildClouds(random);
   scene.add(clouds);
+  const flocks = [
+    buildFlock({ x: -2650, y: 165, z: -350 }, 95, 7, 0.4),
+    buildFlock({ x: 1560, y: 214, z: 1060 }, 80, 7, 2.1),
+  ];
+  for (const flock of flocks) scene.add(flock.group);
 
   return {
     groundHeight: (x, z) => terrainHeight(x, z),
@@ -631,11 +762,36 @@ export function createWorld(scene, seed) {
       clouds.position.x = Math.sin(t * 0.004) * 60 + ((t * 3.2) % 240) - 120;
       lavaLight.intensity = 2600 + Math.sin(t * 7.3) * 500 + Math.sin(t * 13.7) * 280;
       town.lamp.material.emissiveIntensity = 2.6 + Math.sin(t * 2.2) * 1.1;
+      town.beam.rotation.y = t * 0.35;
+      town.beamMaterial.opacity = 0.14 + Math.sin(t * 0.9) * 0.02;
       glitter.material.opacity = 0.46 + Math.sin(t * 1.7) * 0.05 + Math.sin(t * 4.3) * 0.03;
       for (const { boat, phase } of harbour.boats) {
         boat.position.y = Math.sin(t * 0.8 + phase) * 0.12;
         boat.rotation.z = Math.sin(t * 0.6 + phase) * 0.02;
         boat.rotation.x = Math.cos(t * 0.5 + phase) * 0.015;
+      }
+      // The ferry works its loop: position and heading from the clock, a gentle roll on top.
+      const fa = FERRY_LOOP.phase + (t * Math.PI * 2) / FERRY_LOOP.period;
+      const fx = FERRY_LOOP.x + Math.cos(fa) * FERRY_LOOP.rx;
+      const fz = FERRY_LOOP.z + Math.sin(fa) * FERRY_LOOP.rz;
+      const fvx = -Math.sin(fa) * FERRY_LOOP.rx;
+      const fvz = Math.cos(fa) * FERRY_LOOP.rz;
+      harbour.ferry.position.set(fx, Math.sin(t * 0.8 + 2.2) * 0.1, fz);
+      harbour.ferry.rotation.set(Math.cos(t * 0.5 + 2.2) * 0.012, Math.atan2(-fvz, fvx), Math.sin(t * 0.6 + 2.2) * 0.018);
+      // The flocks circle their thermals, each bird on its own circle, wings beating.
+      for (const flock of flocks) {
+        for (const b of flock.birds) {
+          const a = b.a0 + t * b.speed;
+          b.bird.position.set(
+            flock.centre.x + Math.cos(a) * b.r,
+            flock.centre.y + b.lift + Math.sin(t * 0.7 + b.phase) * 4,
+            flock.centre.z + Math.sin(a) * b.r,
+          );
+          b.bird.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a));
+          const flap = Math.sin(t * 8 + b.phase) * 0.5 + 0.08;
+          b.wingL.rotation.x = -flap;
+          b.wingR.rotation.x = flap;
+        }
       }
     },
   };

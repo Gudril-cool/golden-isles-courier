@@ -45,8 +45,8 @@
   .screen h1 { margin: 0 0 2px; font-size: 54px; letter-spacing: 3px; font-weight: 900; color: #ffd98f; text-shadow: 0 3px 14px rgba(255, 150, 40, 0.35); }
   .screen h2 { margin: 0 0 14px; font-size: 21px; font-weight: 600; color: #ffeecb; }
   .screen p { font-size: 16px; line-height: 1.45; margin: 8px 0; }
-  .missions { display: flex; gap: 12px; margin: 18px 0 6px; }
-  .mission-btn { flex: 1; pointer-events: auto; cursor: pointer; text-align: left; background: rgba(255, 183, 71, 0.12); border: 1px solid rgba(255, 214, 150, 0.55); border-radius: 12px; padding: 12px 14px; color: #fff7e8; font-family: inherit; }
+  .missions { display: flex; gap: 10px; margin: 18px 0 6px; }
+  .mission-btn { flex: 1; pointer-events: auto; cursor: pointer; text-align: left; background: rgba(255, 183, 71, 0.12); border: 1px solid rgba(255, 214, 150, 0.55); border-radius: 12px; padding: 11px 12px; color: #fff7e8; font-family: inherit; }
   .mission-btn:hover, .mission-btn:focus { background: rgba(255, 183, 71, 0.3); outline: none; }
   .mission-btn .m-name { font-size: 17px; font-weight: 800; color: #ffd98f; }
   .mission-btn .m-desc { font-size: 13.5px; line-height: 1.4; margin-top: 4px; }
@@ -86,6 +86,7 @@
   <div class="bar"><div class="fill" id="fuel-fill"></div></div>
   <div class="label"><span>HULL</span><span id="hud-hull-pct">100%</span></div>
   <div class="bar"><div class="fill" id="hull-fill"></div></div>
+  <div class="label"><span>WIND</span><span id="hud-wind">—</span></div>
 </div>
 <div class="hud" id="hud-flash"></div>
 <div class="hud" id="hud-photos"></div>
@@ -96,14 +97,15 @@
 <div class="screen" id="screen-title">
   <div class="card">
     <h1>GOLDEN ISLES COURIER</h1>
-    <h2>Sunset mail runs over the Aurelia Isles — rings, deliveries, harbour photos and one restless volcano.</h2>
+    <h2>Sunset mail runs over the Aurelia Isles — rings, deliveries, harbour photos, supply drops and one restless volcano.</h2>
     <div class="missions">
       <button class="mission-btn" id="btn-mission-1"><div class="m-name">1 · Ring Run</div><div class="m-desc">Thread eight glowing rings around Palma and the near islets against the clock.</div><span class="m-key">PRESS 1</span></button>
       <button class="mission-btn" id="btn-mission-2"><div class="m-name">2 · Island Delivery</div><div class="m-desc">Carry the mail pouch from Palma Field to Farrel Isle and land it gently on their strip.</div><span class="m-key">PRESS 2</span></button>
       <button class="mission-btn" id="btn-mission-3"><div class="m-name">3 · Volcano Circuit</div><div class="m-desc">Six rings around Mount Cindera, the last one over the crater's glowing heart.</div><span class="m-key">PRESS 3</span></button>
       <button class="mission-btn" id="btn-mission-4"><div class="m-name">4 · Harbor Photo Run</div><div class="m-desc">Three photo gates over Port Aurelia's harbour — fly them low, frame the shot, mind the masts.</div><span class="m-key">PRESS 4</span></button>
+      <button class="mission-btn" id="btn-mission-5"><div class="m-name">5 · Lighthouse Supply Drop</div><div class="m-desc">Three crates for the lighthouse rock: fly them over Port Aurelia and let go over the glowing ring — the wind has a vote.</div><span class="m-key">PRESS 5</span></button>
     </div>
-    <p class="controls"><b>W / S</b> throttle up / down &nbsp;·&nbsp; <b>↑ / ↓</b> pitch &nbsp;·&nbsp; <b>← / →</b> or <b>A / D</b> bank &amp; turn &nbsp;·&nbsp; <b>Space</b> wheel brakes<br>
+    <p class="controls"><b>W / S</b> throttle up / down &nbsp;·&nbsp; <b>↑ / ↓</b> pitch &nbsp;·&nbsp; <b>← / →</b> or <b>A / D</b> bank &amp; turn &nbsp;·&nbsp; <b>Space</b> wheel brakes &nbsp;·&nbsp; <b>B</b> drop a supply crate<br>
     <b>C</b> cockpit / chase camera &nbsp;·&nbsp; <b>P</b> pause &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; Land slow, land gentle: the mail hates a bent aeroplane.</p>
   </div>
 </div>

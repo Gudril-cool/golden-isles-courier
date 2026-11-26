@@ -10,10 +10,11 @@ import {
   EVENT_TOOK_OFF, EVENT_TOUCHDOWN, EVENT_CRASHED, EVENT_DITCHED,
 } from './flight.js';
 import { MISSIONS, startMission } from './missions.js';
-import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, ACTION_MISSION_1, ACTION_MISSION_2, ACTION_MISSION_3, ACTION_MISSION_4, ACTION_MENU } from './input.js';
+import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, ACTION_MISSION_1, ACTION_MISSION_2, ACTION_MISSION_3, ACTION_MISSION_4, ACTION_MISSION_5, ACTION_DROP, ACTION_MENU } from './input.js';
 import { createHud, formatTime } from './hud.js';
 import { createInstruments } from './instruments.js';
 import { createAudio } from './audio.js';
+import { createWind } from './wind.js';
 import { describeShot } from './shots.js';
 
 const STEP = 1 / 60;
@@ -42,6 +43,8 @@ const input = createInput();
 const hud = createHud();
 const instruments = createInstruments(document.getElementById('panel'));
 const audio = createAudio();
+const wind = createWind();
+let nowSec = 0;
 
 const titleScreen = document.getElementById('screen-title');
 const endScreen = document.getElementById('screen-end');
@@ -145,6 +148,12 @@ function presentEvents(events, happenings) {
       hud.flash(`PHOTO ${happening.index}/${happening.total}  +${happening.points}`, 1.5);
     } else if (happening.kind === 'photo-miss') {
       hud.flash(happening.reason, 1.6);
+    } else if (happening.kind === 'away') {
+      hud.flash('CRATE AWAY', 0.9);
+    } else if (happening.kind === 'drop') {
+      if (happening.grade === 'BULLSEYE DROP') audio.chime();
+      else audio.thud(happening.splash ? 0.5 : 0.3);
+      hud.flash(`${happening.grade}  +${happening.points}`, 1.9);
     } else if (happening.kind === 'complete') {
       mission.score = happening.score;
       endMission({ title: happening.title, detail: happening.detail, success: true });
@@ -165,6 +174,7 @@ function handleActions() {
     else if (actions & ACTION_MISSION_2) beginMission(2);
     else if (actions & ACTION_MISSION_3) beginMission(3);
     else if (actions & ACTION_MISSION_4) beginMission(4);
+    else if (actions & ACTION_MISSION_5) beginMission(5);
     else if (actions & ACTION_CONFIRM) beginMission(1);
     return;
   }
@@ -175,6 +185,9 @@ function handleActions() {
       showScreen('title');
     }
     return;
+  }
+  if ((actions & ACTION_DROP) && screen === 'flying' && mission && mission.drop) {
+    presentEvents(0, mission.drop(flight, wind.sample(nowSec).vector));
   }
   if (actions & ACTION_MUTE) announce(audio.toggleMute() ? 'Sound off.' : 'Sound on.');
   if (actions & ACTION_CAMERA && (screen === 'flying' || screen === 'paused')) {
@@ -191,7 +204,7 @@ function handleActions() {
   }
 }
 
-for (const id of [1, 2, 3, 4]) {
+for (const id of [1, 2, 3, 4, 5]) {
   document.getElementById(`btn-mission-${id}`).addEventListener('click', () => beginMission(id));
 }
 
@@ -279,6 +292,7 @@ function drawFrame(dt, t) {
   poseAircraft(flight, aircraft.group);
   updateCamera(dt);
   hud.updateFlight(flight);
+  hud.updateWind(wind.sample(t), flight.heading);
   if (mission) {
     hud.updateScore(mission.score, mission.time);
     hud.setMission(mission.def.name, mission.goalText());
@@ -296,12 +310,16 @@ function runGame() {
     requestAnimationFrame(frame);
     const dt = Math.min((now - last) / 1000, 0.25);
     last = now;
+    nowSec = now / 1000;
     handleActions();
     if (screen === 'flying') {
       accumulator += dt;
+      const breeze = wind.sample(nowSec).vector;
       let guard = 0;
       while (accumulator >= STEP && screen === 'flying' && guard < 8) {
         const events = stepFlight(flight, input.flightInput(), STEP, world);
+        // The wind's push: a gentle drift on a flying aeroplane, nothing on the ground.
+        if (!flight.onGround) flight.pos.addScaledVector(breeze, STEP * 0.55);
         const happenings = mission ? mission.update(STEP, flight, now / 1000) : [];
         presentEvents(events, happenings);
         accumulator -= STEP;
@@ -314,7 +332,7 @@ function runGame() {
     }
     drawFrame(dt, now / 1000);
   }
-  announce('Golden Isles Courier. Choose a mission: 1, 2, 3 or 4.');
+  announce('Golden Isles Courier. Choose a mission: 1, 2, 3, 4 or 5.');
   requestAnimationFrame(frame);
 }
 
@@ -329,27 +347,30 @@ function runShot(name) {
   mission.time = desc.time;
   mission.leftGround = true;
   if (desc.gateIndex) {
-    // A harbour frame is already in the pouch. Pin its thumbnail the way play does —
-    // hud.addPhoto copies the game's own canvas — so first pose the crossing at the gate
-    // that was snapped and render that moment; the final pose below then overwrites the
-    // flight state, and the mission update there settles the taken gate's beam to grey.
-    const taken = mission.gates[desc.gateIndex - 1];
+    // Harbour frames are already in the pouch. Pin each thumbnail the way play does —
+    // hud.addPhoto copies the game's own canvas — so pose the crossing at every gate that
+    // was snapped and render that moment; the final pose below then overwrites the flight
+    // state, and the mission update there settles the taken gates' beams to grey.
     mission.gateIndex = desc.gateIndex;
     mission.photos = desc.gateIndex;
-    flight.pos.set(taken.position.x, desc.photoAlt, taken.position.z);
-    flight.heading = (taken.userData.headingDeg * Math.PI) / 180;
-    flight.pitch = 0;
-    flight.bank = 0;
-    flight.speed = desc.speed;
-    flight.throttle = desc.throttle;
-    flight.onGround = false;
-    cameraMode = desc.camera;
-    screen = 'flying';
-    poseAircraft(flight, aircraft.group);
-    world.update(0, 1.4);
-    updateCamera(0.016, true);
-    renderer.render(scene, camera);
-    hud.addPhoto(desc.photoPoints);
+    const scores = desc.photoScores ?? [desc.photoPoints];
+    for (let i = 0; i < desc.gateIndex; i += 1) {
+      const taken = mission.gates[i];
+      flight.pos.set(taken.position.x, desc.photoAlt, taken.position.z);
+      flight.heading = (taken.userData.headingDeg * Math.PI) / 180;
+      flight.pitch = 0;
+      flight.bank = 0;
+      flight.speed = desc.speed;
+      flight.throttle = desc.throttle;
+      flight.onGround = false;
+      cameraMode = desc.camera;
+      screen = 'flying';
+      poseAircraft(flight, aircraft.group);
+      world.update(0, 1.4);
+      updateCamera(0.016, true);
+      renderer.render(scene, camera);
+      hud.addPhoto(scores[Math.min(i, scores.length - 1)]);
+    }
   }
   flight.pos.set(desc.pos[0], desc.pos[1], desc.pos[2]);
   flight.heading = (desc.headingDeg * Math.PI) / 180;
@@ -371,6 +392,7 @@ function runShot(name) {
   hud.updateScore(mission.score, mission.time);
   hud.setMission(def.name, mission.goalText());
   updateMarker();
+  hud.updateWind(wind.sample(1.4), flight.heading);
   if (cameraMode === 'cockpit') {
     instruments.setVisible(true);
     instruments.draw(flight);

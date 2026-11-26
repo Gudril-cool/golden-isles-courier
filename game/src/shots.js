@@ -24,17 +24,18 @@ export const STAGED_SHOTS = {
     fuel: 74, hull: 100, camera: 'chase',
     pos: [-3050, 300, -150], headingDeg: 72, pitchDeg: 1, bankDeg: 24, speed: 63, throttle: 0.8,
   },
-  // Harbor Photo Run, lining up on the second frame: one harbour photo is already in the
-  // pouch — photoPoints is what the game's own scoring pays for the centred crossing of the
-  // first gate at photoAlt metres (120 base + 230 centred + 150 x low), and main.js pins its
-  // thumbnail from a real render of that crossing — while the aeroplane sits low on the
-  // second gate's own axis, sixty-two metres out, so the post-and-beam frame fills the view
-  // ahead and the anchorage lies around it.
+  // Harbor Photo Run, lining up on the last frame: two harbour photos are already in the
+  // pouch — photoScores are what the game's own scoring pays for the crossings of the first
+  // two gates at photoAlt metres (120 base + up to 230 centred + up to 150 low), and main.js
+  // pins both thumbnails from real renders of those crossings — while the aeroplane sits low
+  // on the third gate's own axis, fifty-two metres out, looking north-east into the sun so
+  // the sea shines, the post-and-beam frame large ahead and the big coaster at anchor
+  // filling the right of the frame.
   photorun: {
-    mission: 4, ringIndex: 0, gateIndex: 1, score: 420, time: 96,
-    fuel: 71, hull: 100, camera: 'chase',
-    photoAlt: 30, photoPoints: 420,
-    pos: [-3085, 30, -529], headingDeg: 338, pitchDeg: -4, bankDeg: 8, speed: 46, throttle: 0.55,
+    mission: 4, ringIndex: 0, gateIndex: 2, score: 800, time: 150,
+    fuel: 64, hull: 100, camera: 'chase',
+    photoAlt: 30, photoScores: [380, 420],
+    pos: [-2937, 26, -763], headingDeg: 49.5, pitchDeg: -3, bankDeg: -6, speed: 44, throttle: 0.5,
   },
 };
 

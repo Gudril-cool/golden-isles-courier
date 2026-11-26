@@ -34,6 +34,7 @@ export function createHud() {
   const markerDist = el('hud-marker-dist');
   const photoStrip = el('hud-photos');
   const flashEl = el('hud-flash');
+  const windEl = el('hud-wind');
   let messageUntil = 0;
 
   return {
@@ -50,6 +51,18 @@ export function createHud() {
       hullFill.style.width = `${hull}%`;
       hullFill.style.background = hull < 45 ? '#e0483c' : '';
       hullPct.textContent = `${hull}%`;
+    },
+    /**
+     * Paint the wind readout in the systems panel: an arrow for where the wind blows
+     * relative to the nose (up = a tailwind, pushing you along) and its strength in knots.
+     * The ALT/SPD/HDG block is not touched — this lives with fuel and hull.
+     */
+    updateWind(wind, heading) {
+      const arrows = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+      let rel = (wind.dir - heading) % (Math.PI * 2);
+      if (rel < 0) rel += Math.PI * 2;
+      const arrow = arrows[Math.round(rel / (Math.PI / 4)) % 8];
+      windEl.textContent = `${arrow} ${Math.round(wind.speed * 1.944)} KT`;
     },
     /** Paint the score and mission clock. */
     updateScore(value, seconds) {

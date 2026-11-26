@@ -1,11 +1,13 @@
-// The four sorties of the Golden Isles Courier, and the rules that judge them. A mission owns
-// its glowing rings (built as torus meshes facing along the course) or its harbour photo gates
-// (post-and-beam frames standing in the anchorage), watches the flight state for ring passes,
-// photo passes and arrivals, and turns what happens into score, messages and an ending:
-// threading a ring pays, a low centred photo pays by the quality of the shot, landing the mail
+// The five sorties of the Golden Isles Courier, and the rules that judge them. A mission owns
+// its glowing rings (built as torus meshes facing along the course), its harbour photo gates
+// (post-and-beam frames standing in the anchorage) or its lighthouse supply pad, watches the
+// flight state for ring passes, photo passes, crate drops and arrivals, and turns what
+// happens into score, messages and an ending: threading a ring pays, a low centred photo
+// pays by the quality of the shot, a crate in the bullseye pays most of all, landing the mail
 // at Farrel pays more, and bending the aeroplane is priced by the flight model's own report.
 import * as THREE from 'three';
 import { LANDMARKS, getRunway } from './world.js';
+import { createSupplyRun } from './supply.js';
 
 const RING_RADIUS = 15;
 
@@ -82,6 +84,15 @@ export const MISSIONS = [
     kind: 'photo',
     course: photoCourse,
     parSeconds: 240,
+  },
+  {
+    id: 5,
+    name: 'Lighthouse Supply Drop',
+    brief: 'Drop 3 crates into the ring beside the lighthouse — B lets one go',
+    fuel: 85,
+    kind: 'supply',
+    course: null,
+    parSeconds: 300,
   },
 ];
 
@@ -176,12 +187,14 @@ export function startMission(def, scene) {
       gates.push(gate);
     }
   }
+  const supply = def.kind === 'supply' ? createSupplyRun(scene) : null;
   const farrel = getRunway('farrel');
 
   return {
     def,
     rings,
     gates,
+    supply,
     ringIndex: 0,
     gateIndex: 0,
     photos: 0,
@@ -201,6 +214,9 @@ export function startMission(def, scene) {
         const gate = gates[this.gateIndex];
         return gate ? new THREE.Vector3(gate.position.x, 24, gate.position.z) : null;
       }
+      if (def.kind === 'supply') {
+        return supply ? supply.centre.clone().add(new THREE.Vector3(0, 12, 0)) : null;
+      }
       return new THREE.Vector3(farrel.x, farrel.elev + 12, farrel.z);
     },
 
@@ -208,7 +224,21 @@ export function startMission(def, scene) {
     goalText() {
       if (def.kind === 'rings') return `Fly the glowing rings — ${this.ringIndex}/${rings.length} threaded`;
       if (def.kind === 'photo') return `Snap the harbour frames — ${this.photos}/${gates.length} taken · fly them low, 45–145 FT`;
+      if (def.kind === 'supply') {
+        if (!this.leftGround) return 'Take off from Palma Field — three crates aboard';
+        if (supply && supply.cratesLeft > 0) return `Drop a crate in the lighthouse ring — ${supply.dropped}/3 away · press B`;
+        return 'All crates away — bring her home';
+      }
       return this.leftGround ? 'Land gently on the Farrel strip' : 'Take off from Palma Field, mail aboard';
+    },
+
+    /**
+     * The pilot pressed the drop key: on the supply run, let the carried crate go from the
+     * flight state's belly, on the wind as sampled. Returns the happenings to present.
+     */
+    drop(state, windVector) {
+      if (def.kind !== 'supply' || !supply || this.done) return [];
+      return supply.dropCrate(state, windVector) ? [{ kind: 'away' }] : [];
     },
 
     update(dt, state, t) {
@@ -249,6 +279,26 @@ export function startMission(def, scene) {
       }
 
       if (!state.onGround) this.leftGround = true;
+
+      if (def.kind === 'supply' && supply) {
+        for (const landing of supply.update(dt, state, t)) {
+          this.score += landing.points;
+          happenings.push({
+            kind: 'drop', grade: landing.grade, points: landing.points,
+            dist: landing.dist, splash: landing.splash,
+          });
+        }
+        if (supply.dropped >= 3 && !supply.hasFalling()) {
+          const bonus = Math.max(0, Math.round((def.parSeconds - this.time) * 5));
+          this.score += bonus;
+          this.done = true;
+          happenings.push({
+            kind: 'complete', title: 'SUPPLY DROP COMPLETE',
+            detail: `All three crates are down at the lighthouse rock. Best drop: ${supply.bestGrade}. Time bonus +${bonus}.`,
+            score: this.score, time: this.time,
+          });
+        }
+      }
 
       if (def.kind === 'photo' && this.gateIndex < gates.length) {
         const gate = gates[this.gateIndex];
@@ -333,10 +383,11 @@ export function startMission(def, scene) {
       return happenings;
     },
 
-    /** Remove the mission's rings and photo gates from the scene. */
+    /** Remove the mission's rings, photo gates and supply pad from the scene. */
     dispose(sceneToClean) {
       for (const ring of rings) sceneToClean.remove(ring);
       for (const gate of gates) sceneToClean.remove(gate);
+      if (supply) supply.dispose(sceneToClean);
     },
   };
 }
