@@ -1,4 +1,4 @@
-// The staged scenes behind ?shot=cover|approach|town|ring. Each descriptor is a real moment of
+// The staged scenes behind ?shot=cover|approach|town|photorun. Each descriptor is a real moment of
 // play frozen for the camera — a mission in progress, the flight state set by hand, the HUD
 // showing that moment's numbers — and main.js poses the aircraft, aims the camera and renders
 // the game's own frame. Nothing is drawn here that the game does not draw in play.
@@ -24,12 +24,17 @@ export const STAGED_SHOTS = {
     fuel: 74, hull: 100, camera: 'chase',
     pos: [-3050, 300, -150], headingDeg: 72, pitchDeg: 1, bankDeg: 24, speed: 63, throttle: 0.8,
   },
-  // The last Volcano Circuit ring, hung over the crater: staged close and high, nose down
-  // twenty-three degrees, so the ring and the lava crater fill the frame instead of the sky.
-  ring: {
-    mission: 3, ringIndex: 5, score: 750, time: 151,
-    fuel: 68, hull: 100, camera: 'chase',
-    pos: [1621, 560, -1623], headingDeg: 345, pitchDeg: -23, bankDeg: 6, speed: 61, throttle: 0.7,
+  // Harbor Photo Run, lining up on the second frame: one harbour photo is already in the
+  // pouch — photoPoints is what the game's own scoring pays for the centred crossing of the
+  // first gate at photoAlt metres (120 base + 230 centred + 150 x low), and main.js pins its
+  // thumbnail from a real render of that crossing — while the aeroplane sits low on the
+  // second gate's own axis, sixty-two metres out, so the post-and-beam frame fills the view
+  // ahead and the anchorage lies around it.
+  photorun: {
+    mission: 4, ringIndex: 0, gateIndex: 1, score: 420, time: 96,
+    fuel: 71, hull: 100, camera: 'chase',
+    photoAlt: 30, photoPoints: 420,
+    pos: [-3085, 30, -529], headingDeg: 338, pitchDeg: -4, bankDeg: 8, speed: 46, throttle: 0.55,
   },
 };
 

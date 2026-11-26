@@ -328,6 +328,29 @@ function runShot(name) {
   mission.score = desc.score;
   mission.time = desc.time;
   mission.leftGround = true;
+  if (desc.gateIndex) {
+    // A harbour frame is already in the pouch. Pin its thumbnail the way play does —
+    // hud.addPhoto copies the game's own canvas — so first pose the crossing at the gate
+    // that was snapped and render that moment; the final pose below then overwrites the
+    // flight state, and the mission update there settles the taken gate's beam to grey.
+    const taken = mission.gates[desc.gateIndex - 1];
+    mission.gateIndex = desc.gateIndex;
+    mission.photos = desc.gateIndex;
+    flight.pos.set(taken.position.x, desc.photoAlt, taken.position.z);
+    flight.heading = (taken.userData.headingDeg * Math.PI) / 180;
+    flight.pitch = 0;
+    flight.bank = 0;
+    flight.speed = desc.speed;
+    flight.throttle = desc.throttle;
+    flight.onGround = false;
+    cameraMode = desc.camera;
+    screen = 'flying';
+    poseAircraft(flight, aircraft.group);
+    world.update(0, 1.4);
+    updateCamera(0.016, true);
+    renderer.render(scene, camera);
+    hud.addPhoto(desc.photoPoints);
+  }
   flight.pos.set(desc.pos[0], desc.pos[1], desc.pos[2]);
   flight.heading = (desc.headingDeg * Math.PI) / 180;
   flight.pitch = (desc.pitchDeg * Math.PI) / 180;
