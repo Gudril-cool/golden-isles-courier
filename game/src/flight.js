@@ -1,38 +1,22 @@
-// The flight model: an honest little arcade simulation. Throttle makes speed, speed makes
-// lift, bank makes turn, and slow flight stops flying — a stall drops the nose and the sink
-// builds until the pilot trades height for speed again. Ground contact is judged here: gentle
-// arrivals roll out, hard ones bend the hull, and fast ones into terrain end the sortie.
 import * as THREE from 'three';
 import { getRunway, onRunway } from './world.js';
-
 export const EVENT_TOOK_OFF = 1;
 export const EVENT_TOUCHDOWN = 2;
 export const EVENT_CRASHED = 4;
 export const EVENT_DITCHED = 8;
-
-export const MAX_SPEED = 80; // m/s at full throttle, level
-export const STALL_SPEED = 24; // m/s: below this the wing gives up
-const GEAR_HEIGHT = 1.2; // metres from the aircraft origin to the wheels
+export const MAX_SPEED = 80;
+export const STALL_SPEED = 24;
+const GEAR_HEIGHT = 1.2;
 const WORLD_EDGE = 4700;
-
-/**
- * The tourer's performance, and the flight model's yardstick: engine push, the drag that
- * caps level speed, stall and liftoff speeds, fuel burn, and pitch/bank eagerness. Each
- * hangar aeroplane (aircraft.js) carries its own set; applyPerformance fits one to a state.
- */
 export const CRUISE_PERF = {
   airAccel: 11.5, groundAccel: 15, dragK: 0.0055,
   stallSpeed: 24, liftSpeed: 26,
   burnBase: 0.045, burnPower: 0.16,
   pitchRate: 2.2, bankRate: 2.6,
 };
-
-/** Fit an aeroplane's performance (from the aircraft.js roster) to a flight state. */
 export function applyPerformance(state, perf) {
   state.perf = { ...perf };
 }
-
-/** A fresh flight state, parked at the start of the Palma strip. */
 export function createFlight() {
   return {
     pos: new THREE.Vector3(),
@@ -47,11 +31,15 @@ export function createFlight() {
     verticalSpeed: 0,
     stalled: false,
     lastTouchdown: null,
+    wearEngine: 0,
+    wearProp: 0,
+    engineOut: false,
+    waterZone: null,
+    stormFactor: 0,
+    ashExposure: 0,
     perf: { ...CRUISE_PERF },
   };
 }
-
-/** Park the aircraft at the threshold of a runway, facing along it, tanks and hull as given. */
 export function resetFlight(state, runway, fuel) {
   const rad = (runway.headingDeg * Math.PI) / 180;
   const u = -runway.length / 2 + 70;
@@ -67,35 +55,40 @@ export function resetFlight(state, runway, fuel) {
   state.verticalSpeed = 0;
   state.stalled = false;
   state.lastTouchdown = null;
+  state.wearEngine = 0;
+  state.wearProp = 0;
+  state.engineOut = false;
+  state.waterZone = null;
+  state.ashExposure = 0;
 }
-
-/** Compass heading in degrees, 0–359, from the state's radian heading. */
+export function thrustLoss(state) {
+  return Math.round(0.35 * state.wearEngine);
+}
+export function dragGain(state) {
+  return Math.round(0.9 * state.wearProp);
+}
 export function headingDegrees(state) {
   return ((Math.round((state.heading * 180) / Math.PI) % 360) + 360) % 360;
 }
-
-/** Airspeed in knots for the HUD. */
 export function speedKnots(state) {
   return state.speed * 1.944;
 }
-
-/** Altitude above the sea in feet for the HUD. */
 export function altitudeFeet(state) {
   return Math.max(0, (state.pos.y - GEAR_HEIGHT) * 3.281);
 }
-
-/**
- * Advance the flight by dt seconds against the pilot's input and the world's ground.
- * Returns an EVENT_* bitmask; a touchdown's details land on state.lastTouchdown.
- */
 export function stepFlight(state, input, dt, world) {
   let events = 0;
   const perf = state.perf ?? CRUISE_PERF;
-  const power = state.fuel > 0 ? state.throttle : 0;
-
+  const power = state.fuel > 0 && !state.engineOut ? state.throttle * (1 - 0.0035 * state.wearEngine) : 0;
   state.throttle = THREE.MathUtils.clamp(state.throttle + input.throttle * dt * 0.5, 0, 1);
   state.fuel = Math.max(0, state.fuel - dt * (perf.burnBase + power * perf.burnPower));
-
+  if (!state.onGround || state.speed > 5) {
+    const hot = Math.max(0, state.throttle - 0.85) / 0.15;
+    state.wearEngine = Math.min(100, state.wearEngine + dt * (hot * 0.5 + (state.stormFactor ? state.throttle * 0.22 : 0)));
+    state.wearProp = Math.min(100, state.wearProp + dt * (hot * 0.18 + (state.stormFactor ? 0.3 : 0) + (state.ashExposure ? 0.85 : 0)));
+  }
+  const inWater = () => state.waterZone
+    && Math.hypot(state.pos.x - state.waterZone.x, state.pos.z - state.waterZone.z) <= state.waterZone.r;
   if (state.onGround) {
     const accel = power * perf.groundAccel - state.speed * 0.22 - (input.brake ? 9 : 0);
     state.speed = Math.max(0, state.speed + accel * dt);
@@ -104,7 +97,12 @@ export function stepFlight(state, input, dt, world) {
     state.pitch = THREE.MathUtils.lerp(state.pitch, 0, 1 - Math.exp(-dt * 4));
     state.pos.x += Math.sin(state.heading) * state.speed * dt;
     state.pos.z += -Math.cos(state.heading) * state.speed * dt;
-    if (world.groundHeight(state.pos.x, state.pos.z) < -0.6) {
+    if (state.speed < 0.5 && onRunway(getRunway('palma'), state.pos.x, state.pos.z)) {
+      state.wearEngine = Math.max(0, state.wearEngine - dt * 25);
+      state.wearProp = Math.max(0, state.wearProp - dt * 25);
+      if (state.wearEngine <= 0 && state.wearProp <= 0) state.engineOut = false;
+    }
+    if (world.groundHeight(state.pos.x, state.pos.z) < -0.6 && !inWater()) {
       state.pos.y = GEAR_HEIGHT * 0.4;
       return events | EVENT_DITCHED;
     }
@@ -117,46 +115,38 @@ export function stepFlight(state, input, dt, world) {
     }
     return events;
   }
-
-  // In the air: bank toward the pilot's ask, turn with the bank, pitch toward the ask.
   const bankTarget = input.bank * 1.02;
   state.bank += (bankTarget - state.bank) * (1 - Math.exp(-dt * perf.bankRate));
   const turnRate = (9.8 * Math.tan(state.bank)) / Math.max(state.speed, 20);
   state.heading += turnRate * dt * 0.9;
-
   let pitchTarget = input.pitch * 0.5;
   const stalled = state.speed < perf.stallSpeed;
   if (stalled) pitchTarget -= (perf.stallSpeed - state.speed) * 0.022;
   state.stalled = stalled;
   state.pitch += (pitchTarget - state.pitch) * (1 - Math.exp(-dt * perf.pitchRate));
-
-  const accel = power * perf.airAccel - perf.dragK * state.speed * state.speed - Math.sin(state.pitch) * 5.4;
+  const accel = power * perf.airAccel - perf.dragK * (1 + 0.009 * state.wearProp) * state.speed * state.speed - Math.sin(state.pitch) * 5.4;
   state.speed = THREE.MathUtils.clamp(state.speed + accel * dt, 0, 96);
-
   let vy = Math.sin(state.pitch) * state.speed;
   if (stalled) vy -= (perf.stallSpeed - state.speed) * 0.6;
   vy -= (1 - Math.cos(state.bank)) * state.speed * 0.1;
   state.verticalSpeed = vy;
-
   const forward = Math.cos(state.pitch) * state.speed;
   state.pos.x += Math.sin(state.heading) * forward * dt;
   state.pos.z += -Math.cos(state.heading) * forward * dt;
   state.pos.y += vy * dt;
   state.pos.x = THREE.MathUtils.clamp(state.pos.x, -WORLD_EDGE, WORLD_EDGE);
   state.pos.z = THREE.MathUtils.clamp(state.pos.z, -WORLD_EDGE, WORLD_EDGE);
-
-  // Ground contact.
   const landY = world.groundHeight(state.pos.x, state.pos.z);
   const floorY = Math.max(landY, 0);
   if (state.pos.y <= floorY + GEAR_HEIGHT) {
-    if (landY < -0.6) {
+    if (landY < -0.6 && !inWater()) {
       events |= EVENT_DITCHED;
       state.pos.y = GEAR_HEIGHT * 0.4;
       return events;
     }
     const palma = getRunway('palma');
     const farrel = getRunway('farrel');
-    const runwayId = onRunway(palma, state.pos.x, state.pos.z) ? 'palma' : onRunway(farrel, state.pos.x, state.pos.z) ? 'farrel' : null;
+    const runwayId = onRunway(palma, state.pos.x, state.pos.z) ? 'palma' : onRunway(farrel, state.pos.x, state.pos.z) ? 'farrel' : landY < -0.6 ? 'water' : null;
     const bankDeg = Math.abs((state.bank * 180) / Math.PI);
     state.lastTouchdown = {
       sink: state.verticalSpeed,
@@ -189,8 +179,6 @@ export function stepFlight(state, input, dt, world) {
   }
   return events;
 }
-
-/** Pose the aircraft object from the flight state (YXZ: heading, then pitch, then bank). */
 export function poseAircraft(state, object) {
   object.position.copy(state.pos);
   object.rotation.order = 'YXZ';

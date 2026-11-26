@@ -1,9 +1,4 @@
-// The courier planes, built from three.js primitives — no model files. Three wait in the
-// hangar: KESTREL trainer, VOYAGER tourer, COMET racer, each with its own roster performance.
-// All share a propeller blur disc, tinted canopy, fixed gear, nav lights and the mail pouch.
 import * as THREE from 'three';
-
-/** The hangar roster: looks, shape and the performance flight.js flies by, per aeroplane. */
 export const AIRCRAFT = {
   kestrel: {
     id: 'kestrel', name: 'KESTREL', role: 'Trainer · forgiving',
@@ -30,26 +25,15 @@ export const AIRCRAFT = {
     perf: { airAccel: 15.8, groundAccel: 17.5, dragK: 0.0047, stallSpeed: 29, liftSpeed: 31, burnBase: 0.062, burnPower: 0.27, pitchRate: 2.9, bankRate: 3.4 },
   },
 };
-
-/** The hangar's order on the title screen. */
 export const AIRCRAFT_ORDER = ['kestrel', 'voyager', 'comet'];
-
 const DARK = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.6, metalness: 0.3 });
 const TYRE = new THREE.MeshStandardMaterial({ color: 0x1d1f22, roughness: 0.95 });
-
-/** A rounded box-ish part placed in the airframe; the airframe's nose points down local -Z. */
 function part(geometry, material, x, y, z, rx = 0, ry = 0, rz = 0) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x, y, z);
   mesh.rotation.set(rx, ry, rz);
   return mesh;
 }
-
-/**
- * Build one of the hangar's aeroplanes. Returns the group to pose each frame, the
- * propeller to spin, a function to hide the canopy glass for the cockpit camera, and the
- * roster entry it was built from.
- */
 export function createAircraft(variantId = 'kestrel') {
   const variant = AIRCRAFT[variantId] ?? AIRCRAFT.kestrel;
   const paint = {
@@ -58,23 +42,17 @@ export function createAircraft(variantId = 'kestrel') {
     glass: new THREE.MeshStandardMaterial({ color: variant.paint.glass, roughness: 0.08, metalness: 0.55, emissive: 0x3a2c14, emissiveIntensity: 0.25 }),
   };
   const group = new THREE.Group();
-
   const fuselageGeometry = new THREE.CapsuleGeometry(0.88, 4.4, 6, 12);
   fuselageGeometry.rotateX(Math.PI / 2);
   const fuselage = part(fuselageGeometry, paint.body, 0, 0, 0.3);
   fuselage.scale.set(1, 1, variant.stretch);
   group.add(fuselage);
-
   const cowlGeometry = new THREE.CylinderGeometry(0.92, 0.86, 1.3, 14);
   cowlGeometry.rotateX(Math.PI / 2);
   group.add(part(cowlGeometry, paint.accent, 0, 0, -2.35));
-
   const canopy = part(new THREE.SphereGeometry(0.8, 14, 10), paint.glass, 0, 0.72, -0.55);
   canopy.scale.set(0.78, 0.62, 1.5);
   group.add(canopy);
-
-  // The wing: one straight span, or for the racer two halves raked back. Span and sweep are
-  // roster data, read from the variant.
   if (variant.sweep > 0) {
     for (const side of [-1, 1]) {
       const half = new THREE.Group();
@@ -99,11 +77,7 @@ export function createAircraft(variantId = 'kestrel') {
   } else {
     group.add(part(new THREE.BoxGeometry(0.16, 1.5, 1.15), paint.accent, 0, 0.95, 3.15));
   }
-
-  // The mail pouch: a scuffed brown box lashed to the right flank, the whole point of the job.
   group.add(part(new THREE.BoxGeometry(0.5, 0.7, 1.5), new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: 0.9 }), 0.95, -0.15, 0.7));
-
-  // Fixed taildragger gear: two mains and a tail wheel, with simple legs.
   const wheelGeometry = new THREE.CylinderGeometry(0.44, 0.44, 0.3, 12);
   wheelGeometry.rotateZ(Math.PI / 2);
   for (const side of [-1, 1]) {
@@ -113,8 +87,6 @@ export function createAircraft(variantId = 'kestrel') {
   const tailWheelGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.14, 10);
   tailWheelGeometry.rotateZ(Math.PI / 2);
   group.add(part(tailWheelGeometry, TYRE, 0, -0.72, 3.3));
-
-  // Navigation lights: port red, starboard green, and a double-blink white strobe on the fin.
   const navLight = (color, x) => {
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), new THREE.MeshBasicMaterial({ color }));
     lamp.position.set(x, 0.62, -0.35);
@@ -125,10 +97,6 @@ export function createAircraft(variantId = 'kestrel') {
   const strobe = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), new THREE.MeshBasicMaterial({ color: 0x555a60 }));
   strobe.position.set(0, 1.78, 3.15);
   group.add(strobe);
-
-  // Propeller: spinner cone, two blades and a translucent blur disc with a brighter rim. The
-  // disc fades in with the throttle while the solid blades ghost away. The blades get their
-  // own material so the fade never touches the gear legs sharing the dark paint.
   const propeller = new THREE.Group();
   const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.6, metalness: 0.3, transparent: true });
   const bladeGeometry = new THREE.BoxGeometry(0.26, 2.9, 0.07);
@@ -150,13 +118,11 @@ export function createAircraft(variantId = 'kestrel') {
   propeller.add(blur, blurRim);
   propeller.position.set(0, 0, -3.1);
   group.add(propeller);
-
   let cockpitView = false;
   let lightTime = 0;
   return {
     group,
     variant,
-    /** Spin the propeller for this frame; the blur disc takes over as the revs climb. */
     spinPropeller(dt, throttle) {
       propeller.rotation.z += dt * (4 + throttle * 55);
       const spun = THREE.MathUtils.clamp((throttle - 0.18) * 1.6, 0, 1);
@@ -164,7 +130,6 @@ export function createAircraft(variantId = 'kestrel') {
       if (cockpitView && spun === 0) blur.material.opacity = 0.13;
       blurRim.material.opacity = spun * 0.38;
       bladeMaterial.opacity = 1 - spun * 0.8;
-      // The tail strobe double-blinks on a 1.4 s cycle, lit or idle.
       lightTime += dt;
       const phase = lightTime % 1.4;
       const strobeOn = phase < 0.07 || (phase > 0.18 && phase < 0.25);
@@ -172,7 +137,6 @@ export function createAircraft(variantId = 'kestrel') {
       const pulse = strobeOn ? 1.5 : 1;
       strobe.scale.set(pulse, pulse, pulse);
     },
-    /** Switch to the pilot's seat: from inside, the canopy glass and the blades vanish. */
     setCockpitView(on) {
       cockpitView = on;
       canopy.visible = !on;

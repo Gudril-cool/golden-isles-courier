@@ -1,13 +1,4 @@
-// The other aeroplanes of the Aurelia Isles: two locals working their own circuits — a
-// sky-blue trainer orbiting Palma and a yellow mail plane on the long Palma–Farrel ellipse —
-// so the sky is lived in, not empty. Each route is a pure function of the clock, like the
-// ferry's loop, so a staged screenshot shows the traffic exactly where play would.
 import * as THREE from 'three';
-
-/**
- * The traffic routes: ellipse centre, radii, cruising height, seconds per circuit, travel
- * direction, and the phase that puts each plane in a staged frame at the staging clock.
- */
 export const TRAFFIC_ROUTES = [
   {
     name: 'Palma circuit', centre: { x: -300, z: -700 }, rx: 1300, rz: 700,
@@ -20,18 +11,11 @@ export const TRAFFIC_ROUTES = [
     body: 0xf2c230, wing: 0x33383f,
   },
 ];
-
-/**
- * A distant cousin of the courier plane, built light: at circuit distance what reads is the
- * silhouette, the wing, a turning prop disc and the navigation lights — so those are what
- * it gets. Nose down local -Z, the courier plane's convention.
- */
 function buildTrafficPlane(route) {
   const group = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: route.body, roughness: 0.55, metalness: 0.08 });
   const wingMat = new THREE.MeshStandardMaterial({ color: route.wing, roughness: 0.55, metalness: 0.08 });
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.7 });
-
   const fuselageGeometry = new THREE.CapsuleGeometry(0.85, 4.2, 6, 10);
   fuselageGeometry.rotateX(Math.PI / 2);
   const fuselage = new THREE.Mesh(fuselageGeometry, bodyMat);
@@ -60,16 +44,9 @@ function buildTrafficPlane(route) {
   group.add(navLight(0xff2a1e, -5.55));
   group.add(navLight(0x2aff5a, 5.55));
   group.rotation.order = 'YXZ';
-  // A touch larger than life: at circuit distance a true-scale aeroplane is a speck, and
-  // the isles' sky should read as flown in, not empty.
   group.scale.setScalar(1.3);
   return { group, disc };
 }
-
-/**
- * Build the traffic into the scene. update(t) poses every plane on its route for the clock
- * t and spins the prop discs. positions() reports where the planes are, for tests.
- */
 export function createTraffic(scene) {
   const group = new THREE.Group();
   const planes = TRAFFIC_ROUTES.map((route) => {
@@ -78,7 +55,6 @@ export function createTraffic(scene) {
     return { route, ...built };
   });
   scene.add(group);
-
   function update(t) {
     for (const plane of planes) {
       const { route } = plane;
@@ -95,12 +71,10 @@ export function createTraffic(scene) {
     }
   }
   update(0);
-
   return {
     group,
     planes,
     update,
-    /** Where each traffic plane is right now, as fresh vectors. */
     positions() {
       return planes.map((plane) => plane.group.position.clone());
     },

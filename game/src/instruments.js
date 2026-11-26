@@ -1,16 +1,9 @@
-// The cockpit panel: a canvas-drawn instrument board that only exists in the cockpit view.
-// Four steam gauges with warm backlighting — attitude indicator, airspeed, altimeter and
-// compass — plus a throttle quadrant bar and a vertical-speed readout. Every needle is driven
-// by the live flight state, so the panel in a screenshot is a panel mid-flight, not a picture.
 import { altitudeFeet, headingDegrees, speedKnots } from './flight.js';
-
 const FACE = '#11161f';
 const RIM = '#3a4353';
 const LIT = '#ffd98f';
 const NEEDLE = '#ffb35c';
 const INK = '#f4ead2';
-
-/** One round gauge face with its label under it. */
 function gaugeFace(ctx, x, y, r, label) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -29,8 +22,6 @@ function gaugeFace(ctx, x, y, r, label) {
   ctx.textAlign = 'center';
   ctx.fillText(label, x, y + r + 20);
 }
-
-/** A needle from the centre of a gauge at angle a (radians, 0 = up, clockwise). */
 function needle(ctx, x, y, r, a, color = NEEDLE) {
   ctx.beginPath();
   ctx.moveTo(x - Math.cos(a) * 7, y - Math.sin(a) * 7);
@@ -44,8 +35,6 @@ function needle(ctx, x, y, r, a, color = NEEDLE) {
   ctx.fillStyle = '#d8dde6';
   ctx.fill();
 }
-
-/** Tick labels around a dial: entries of [value, angleRadians]. */
 function ticks(ctx, x, y, r, entries, fontSize = 15) {
   ctx.fillStyle = INK;
   ctx.font = `700 ${fontSize}px "Segoe UI", system-ui, sans-serif`;
@@ -62,22 +51,16 @@ function ticks(ctx, x, y, r, entries, fontSize = 15) {
   }
   ctx.textBaseline = 'alphabetic';
 }
-
-/** Create the panel painter for the #panel canvas. */
 export function createInstruments(canvas) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width;
   const H = canvas.height;
-
   return {
-    /** Show or hide the panel (it belongs to the cockpit view only). */
     setVisible(visible) {
       canvas.style.display = visible ? 'block' : 'none';
     },
-    /** Draw the whole board from the flight state. */
     draw(state) {
       ctx.clearRect(0, 0, W, H);
-      // The board itself: a dark slab with a warm top edge, and the glareshield brow.
       ctx.fillStyle = '#171c26';
       ctx.beginPath();
       ctx.roundRect(6, 26, W - 12, H - 26, 18);
@@ -88,11 +71,8 @@ export function createInstruments(canvas) {
       ctx.fill();
       ctx.fillStyle = 'rgba(255, 179, 92, 0.5)';
       ctx.fillRect(24, 58, W - 48, 2);
-
       const y = 148;
       const r = 76;
-
-      // Attitude indicator: the horizon rolls with the bank and slides with the pitch.
       const ax = 128;
       gaugeFace(ctx, ax, y, r, 'ATTITUDE');
       ctx.save();
@@ -127,16 +107,12 @@ export function createInstruments(canvas) {
       ctx.lineTo(ax + 8, y);
       ctx.lineTo(ax + 30, y);
       ctx.stroke();
-
-      // Airspeed: 0–170 kt over 270 degrees.
       const sx = 322;
       gaugeFace(ctx, sx, y, r, 'AIRSPEED · KT');
       const spdEntries = [];
       for (let v = 0; v <= 160; v += 20) spdEntries.push([String(v), -Math.PI * 0.75 + (v / 170) * Math.PI * 1.5]);
       ticks(ctx, sx, y, r, spdEntries, 14);
       needle(ctx, sx, y, r, -Math.PI * 0.75 + (speedKnots(state) / 170) * Math.PI * 1.5);
-
-      // Altimeter: one turn is 1,000 ft; the drum window shows the altitude outright.
       const lx = 516;
       gaugeFace(ctx, lx, y, r, 'ALTIMETER · FT');
       const altEntries = [];
@@ -149,8 +125,6 @@ export function createInstruments(canvas) {
       ctx.font = '800 17px "Segoe UI", system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(String(Math.round(altitudeFeet(state))), lx, y + 40);
-
-      // Compass: a rotating card under a fixed lubber line.
       const cx = 710;
       gaugeFace(ctx, cx, y, r, 'HEADING');
       const hdg = headingDegrees(state);
@@ -176,8 +150,6 @@ export function createInstruments(canvas) {
       ctx.moveTo(cx, y - r + 4);
       ctx.lineTo(cx, y - r + 20);
       ctx.stroke();
-
-      // Throttle quadrant and vertical speed, stacked at the right edge.
       const tx = 806;
       ctx.fillStyle = LIT;
       ctx.font = '700 14px "Segoe UI", system-ui, sans-serif';

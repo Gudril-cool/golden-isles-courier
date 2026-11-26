@@ -1,40 +1,23 @@
-// The lighthouse supply drop: a prepared pad beside Port Aurelia's lighthouse, marked with
-// two glowing rings and a pillar of light, and the crates the courier lets go from the air.
-// A released crate keeps the aeroplane's velocity, falls under gravity, drifts on the wind,
-// and is judged where it rests — inner ring, outer ring, the rocks, or the drink.
 import * as THREE from 'three';
 import { LANDMARKS, terrainHeight } from './world.js';
-
-/** The pad sits on the flat shoulder north-east of the lighthouse, above the town shore. */
 export const DROP_ZONE = { x: LANDMARKS.lighthouse.x + 60, z: LANDMARKS.lighthouse.z + 70 };
 export const DROP_INNER_RADIUS = 10;
 export const DROP_OUTER_RADIUS = 26;
 const PAD_RADIUS = 28;
-const GRAVITY = 12; // m/s^2, a touch heavy so a drop reads as a drop, not a float
-
-/** The pad's centre in world space, standing on the terrain height function. */
-export function dropZoneCentre() {
-  return new THREE.Vector3(DROP_ZONE.x, terrainHeight(DROP_ZONE.x, DROP_ZONE.z), DROP_ZONE.z);
+const GRAVITY = 12;
+export function dropZoneCentre(zone = DROP_ZONE) {
+  return new THREE.Vector3(zone.x, terrainHeight(zone.x, zone.z), zone.z);
 }
-
-/** The grade a finished drop earns: distance from the pad's centre, and whether it stayed dry. */
 export function scoreDrop(dist, onLand) {
   if (!onLand) return { grade: 'IN THE DRINK', points: 40 };
   if (dist <= DROP_INNER_RADIUS) return { grade: 'BULLSEYE DROP', points: 500 };
   if (dist <= DROP_OUTER_RADIUS) return { grade: 'ON THE MARK', points: 300 };
   return { grade: 'ON THE ROCKS', points: 120 };
 }
-
-/**
- * Build the drop pad into the scene: a gravel disc, the two glowing rings, marker lamps, a
- * beacon pole, and a translucent pillar of light over the centre. Returns the pieces the
- * run animates (the rings' materials, to pulse).
- */
-export function buildSupplyDrop(scene) {
-  const centre = dropZoneCentre();
+export function buildSupplyDrop(scene, zone = DROP_ZONE) {
+  const centre = dropZoneCentre(zone);
   const group = new THREE.Group();
   group.position.copy(centre);
-
   const pad = new THREE.Mesh(
     new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS + 2.5, 2.4, 36),
     new THREE.MeshStandardMaterial({ color: 0x8d8578, roughness: 1 }),
@@ -42,7 +25,6 @@ export function buildSupplyDrop(scene) {
   pad.position.y = 0.1;
   group.add(pad);
   const padTop = 1.3;
-
   const ringMaterial = (emissiveIntensity) => new THREE.MeshStandardMaterial({
     color: 0xff9a2e, emissive: 0xff8a1e, emissiveIntensity, roughness: 0.4,
   });
@@ -63,14 +45,12 @@ export function buildSupplyDrop(scene) {
   bullseye.rotation.x = -Math.PI / 2;
   bullseye.position.y = padTop + 0.06;
   group.add(bullseye);
-
   const lampMaterial = new THREE.MeshBasicMaterial({ color: 0xffc95e });
   for (const [lx, lz] of [[DROP_OUTER_RADIUS, 0], [-DROP_OUTER_RADIUS, 0], [0, DROP_OUTER_RADIUS], [0, -DROP_OUTER_RADIUS]]) {
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.8, 8, 8), lampMaterial);
     lamp.position.set(lx, padTop + 0.9, lz);
     group.add(lamp);
   }
-
   const pillar = new THREE.Mesh(
     new THREE.CylinderGeometry(2.6, 3.8, 150, 12, 1, true),
     new THREE.MeshBasicMaterial({
@@ -80,7 +60,6 @@ export function buildSupplyDrop(scene) {
   );
   pillar.position.y = 75;
   group.add(pillar);
-
   const beacon = new THREE.Group();
   const pole = new THREE.Mesh(
     new THREE.CylinderGeometry(0.35, 0.45, 9, 8),
@@ -90,14 +69,11 @@ export function buildSupplyDrop(scene) {
   const beaconLamp = new THREE.Mesh(new THREE.SphereGeometry(1.1, 10, 8), lampMaterial);
   beaconLamp.position.y = 9.4;
   beacon.add(pole, beaconLamp);
-  beacon.position.set(PAD_RADIUS + 7, terrainHeight(DROP_ZONE.x + PAD_RADIUS + 7, DROP_ZONE.z - 22) - centre.y, -22);
+  beacon.position.set(PAD_RADIUS + 7, terrainHeight(zone.x + PAD_RADIUS + 7, zone.z - 22) - centre.y, -22);
   group.add(beacon);
-
   scene.add(group);
   return { group, centre, padTop, outerMat, innerMat };
 }
-
-/** One supply crate: a stencilled wooden box with a canvas sling, built from primitives. */
 export function buildCrate() {
   const group = new THREE.Group();
   const wood = new THREE.MeshStandardMaterial({ color: 0x9a743f, roughness: 0.9 });
@@ -114,14 +90,8 @@ export function buildCrate() {
   group.add(sling);
   return group;
 }
-
-/**
- * Run one supply sortie's hardware: the pad, the crate slung under the aeroplane, and any
- * crate in the air or at rest. dropCrate lets the carried crate go; update steps what is
- * falling and returns the landings it settles, each { grade, points, dist, splash }.
- */
-export function createSupplyRun(scene) {
-  const pad = buildSupplyDrop(scene);
+export function createSupplyRun(scene, zone = DROP_ZONE) {
+  const pad = buildSupplyDrop(scene, zone);
   const centre = pad.centre;
   const padSurfaceY = centre.y + pad.padTop;
   let carried = buildCrate();
@@ -129,7 +99,6 @@ export function createSupplyRun(scene) {
   let falling = null;
   const rested = [];
   const splashes = [];
-
   const run = {
     centre,
     cratesLeft: 3,
@@ -137,17 +106,12 @@ export function createSupplyRun(scene) {
     bestGrade: null,
     bestPoints: -1,
     lastDrop: null,
-
-    /** True while a crate is in the air — one at a time keeps the judging honest. */
     hasFalling() {
       return falling !== null;
     },
-
-    /** Let the carried crate go from the aeroplane's belly, with its speed and the wind. */
     dropCrate(state, windVector) {
       if (this.cratesLeft <= 0 || falling || state.onGround) return false;
       this.cratesLeft -= 1;
-      // Snap the crate to the belly it leaves from — its mesh may lag a frame behind.
       carried.position.set(state.pos.x, state.pos.y - 1.9, state.pos.z);
       carried.rotation.set(0, -state.heading, 0);
       const cosPitch = Math.cos(state.pitch);
@@ -164,14 +128,11 @@ export function createSupplyRun(scene) {
       }
       return true;
     },
-
     update(dt, state, t) {
       const landings = [];
       pad.outerMat.emissiveIntensity = 1.5 + Math.sin(t * 4) * 0.45;
       pad.innerMat.emissiveIntensity = 2.1 + Math.sin(t * 4) * 0.6;
-
       if (carried && state) {
-        // Slung under the belly in the air; resting on the ground beside the gear when parked.
         const slungY = Math.max(
           state.pos.y - 1.9,
           terrainHeight(state.pos.x, state.pos.z) + 0.5,
@@ -179,7 +140,6 @@ export function createSupplyRun(scene) {
         carried.position.set(state.pos.x, slungY, state.pos.z);
         carried.rotation.set(0, -state.heading, 0);
       }
-
       if (falling) {
         const { mesh, vel, wind } = falling;
         vel.y -= GRAVITY * dt;
@@ -220,7 +180,6 @@ export function createSupplyRun(scene) {
           }
         }
       }
-
       for (let i = splashes.length - 1; i >= 0; i -= 1) {
         const s = splashes[i];
         s.age += dt;
@@ -236,8 +195,6 @@ export function createSupplyRun(scene) {
       }
       return landings;
     },
-
-    /** Remove the pad, the crates and any splash still on the water. */
     dispose(sceneToClean) {
       sceneToClean.remove(pad.group);
       if (carried) sceneToClean.remove(carried);

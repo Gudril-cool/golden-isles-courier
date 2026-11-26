@@ -1,8 +1,3 @@
-// All sound is synthesised with WebAudio — no audio files. A two-oscillator engine hum follows
-// the throttle, a bright chime marks a ring threaded, a low thud marks rubber meeting ground
-// (or worse), and a small arpeggio signs off a finished mission. M mutes the lot.
-
-/** Create the sound kit; the context wakes on the first user gesture that calls start(). */
 export function createAudio() {
   let context = null;
   let engineGain = null;
@@ -10,7 +5,6 @@ export function createAudio() {
   let engineOscB = null;
   let engineFilter = null;
   let muted = false;
-
   function start() {
     if (context) {
       if (context.state === 'suspended') context.resume();
@@ -40,7 +34,6 @@ export function createAudio() {
     engineOscA.start();
     engineOscB.start();
   }
-
   function tone(freq, at, dur, type = 'sine', vol = 0.16) {
     if (!context || muted) return;
     const osc = context.createOscillator();
@@ -55,10 +48,8 @@ export function createAudio() {
     osc.start(at);
     osc.stop(at + dur + 0.05);
   }
-
   return {
     start,
-    /** Follow the engine: revs from the throttle, load from the airspeed. */
     update(throttle, speed, running) {
       if (!context) return;
       const t = context.currentTime;
@@ -69,21 +60,18 @@ export function createAudio() {
       engineOscB.frequency.setTargetAtTime(freq / 2, t, 0.1);
       engineFilter.frequency.setTargetAtTime(240 + throttle * 620, t, 0.15);
     },
-    /** A ring threaded: two bright notes. */
     chime() {
       if (!context) return;
       const t = context.currentTime;
       tone(1318, t, 0.22, 'sine', 0.15);
       tone(1760, t + 0.07, 0.3, 'sine', 0.13);
     },
-    /** A photo taken: two hard shutter clicks, a beat apart. */
     shutter() {
       if (!context) return;
       const t = context.currentTime;
       tone(2100, t, 0.05, 'square', 0.1);
       tone(1250, t + 0.08, 0.07, 'square', 0.09);
     },
-    /** Ground contact: a noise thud whose weight follows the arrival's firmness. */
     thud(hardness) {
       if (!context || muted) return;
       const t = context.currentTime;
@@ -103,7 +91,6 @@ export function createAudio() {
       gain.connect(context.destination);
       source.start(t);
     },
-    /** Mission complete: a small major arpeggio. */
     fanfare() {
       if (!context) return;
       const t = context.currentTime;
@@ -111,7 +98,6 @@ export function createAudio() {
       tone(659, t + 0.11, 0.3, 'triangle', 0.16);
       tone(784, t + 0.22, 0.5, 'triangle', 0.18);
     },
-    /** Mission failed: two falling notes. */
     fail() {
       if (!context) return;
       const t = context.currentTime;

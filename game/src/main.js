@@ -1,15 +1,12 @@
-// Golden Isles Courier — boot and the one loop. World, aeroplane and mission step in fixed
-// 1/60 s slices; the camera and HUD follow the flight state. A ?shot=name URL instead stages
-// one frozen moment of play and sets window.__shotReady.
 import * as THREE from 'three';
 import { createWorld, getRunway } from './world.js';
 import { createAircraft, AIRCRAFT, AIRCRAFT_ORDER } from './aircraft.js';
 import {
-  createFlight, resetFlight, stepFlight, poseAircraft, applyPerformance,
-  EVENT_TOOK_OFF, EVENT_TOUCHDOWN, EVENT_CRASHED, EVENT_DITCHED,
+ createFlight, resetFlight, stepFlight, poseAircraft, applyPerformance,
+ EVENT_TOOK_OFF, EVENT_TOUCHDOWN, EVENT_CRASHED, EVENT_DITCHED,
 } from './flight.js';
 import { MISSIONS, startMission } from './missions.js';
-import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, ACTION_MISSION_1, ACTION_MISSION_2, ACTION_MISSION_3, ACTION_MISSION_4, ACTION_MISSION_5, ACTION_DROP, ACTION_MENU, ACTION_PLANE_PREV, ACTION_PLANE_NEXT, ACTION_WEATHER } from './input.js';
+import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, MISSION_ACTIONS, ACTION_DROP, ACTION_MENU, ACTION_PLANE_PREV, ACTION_PLANE_NEXT, ACTION_WEATHER, ACTION_DIVERT, ACTION_PRESS_ON } from './input.js';
 import { createHud, formatTime } from './hud.js';
 import { createInstruments } from './instruments.js';
 import { createAudio } from './audio.js';
@@ -19,20 +16,17 @@ import { createTraffic } from './traffic.js';
 import { createPilotRank } from './pilot.js';
 import { createMap } from './map.js';
 import { describeShot } from './shots.js';
-
 const STEP = 1 / 60;
 const params = new URLSearchParams(window.location.search);
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
 const seed = Number.isInteger(seedParam) ? seedParam : 7;
 const shotName = params.get('shot');
-
 const canvas = document.getElementById('scene');
 const status = document.getElementById('status');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
-
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 24000);
 const world = createWorld(scene, seed);
@@ -43,7 +37,6 @@ const flight = createFlight();
 resetFlight(flight, getRunway('palma'), 100);
 applyPerformance(flight, AIRCRAFT[planeId].perf);
 poseAircraft(flight, aircraft.group);
-
 const input = createInput();
 const hud = createHud();
 const instruments = createInstruments(document.getElementById('panel'));
@@ -54,481 +47,497 @@ const traffic = createTraffic(scene);
 const pilot = createPilotRank();
 const islesMap = createMap(document.getElementById('map-canvas'), world);
 let nowSec = 0;
-
-/** Dress the light and the haze for the live weather preset. */
 function applyWeatherLook() {
-  const preset = weather.current();
-  renderer.toneMappingExposure = preset.exposure;
-  if (scene.fog) {
-    scene.fog.near = preset.fogNear;
-    scene.fog.far = preset.fogFar;
-  }
+ const preset = weather.current();
+ renderer.toneMappingExposure = preset.exposure;
+ if (scene.fog) {
+  scene.fog.near = preset.fogNear;
+  scene.fog.far = preset.fogFar;
+ }
 }
-
-/** Paint the title screen's hangar: which aeroplane and weather stand chosen, and the rank. */
 function refreshHangar() {
-  for (const btn of document.querySelectorAll('[data-plane]')) {
-    btn.classList.toggle('selected', btn.dataset.plane === planeId);
-  }
-  for (const btn of document.querySelectorAll('[data-wx]')) {
-    btn.classList.toggle('selected', btn.dataset.wx === weather.presetId);
-  }
-  const variant = AIRCRAFT[planeId];
-  const bars = (n) => '▰'.repeat(n) + '▱'.repeat(5 - n);
-  document.getElementById('plane-line').textContent =
-    `${variant.name} — ${variant.role}. ${variant.blurb} ` +
-    `SPD ${bars(variant.stats.spd)} · CLIMB ${bars(variant.stats.clb)} · RANGE ${bars(variant.stats.rng)}`;
-  document.getElementById('title-rank').textContent = `PILOT RANK — ${pilot.label()}`;
+ for (const btn of document.querySelectorAll('[data-plane]')) {
+  btn.classList.toggle('selected', btn.dataset.plane === planeId);
+ }
+ for (const btn of document.querySelectorAll('[data-wx]')) {
+  btn.classList.toggle('selected', btn.dataset.wx === weather.presetId);
+ }
+ const variant = AIRCRAFT[planeId];
+ const bars = (n) => '▰'.repeat(n) + '▱'.repeat(5 - n);
+ document.getElementById('plane-line').textContent =
+  `${variant.name} — ${variant.role}. ${variant.blurb} ` +
+  `SPD ${bars(variant.stats.spd)} · CLIMB ${bars(variant.stats.clb)} · RANGE ${bars(variant.stats.rng)}`;
+ document.getElementById('title-rank').textContent = `PILOT RANK — ${pilot.label()}`;
 }
-
-/** Choose the aeroplane: rebuild the airframe in its livery and fit its performance. */
 function selectPlane(id) {
-  if (!AIRCRAFT[id]) return;
-  planeId = id;
-  scene.remove(aircraft.group);
-  aircraft = createAircraft(planeId);
-  scene.add(aircraft.group);
-  applyPerformance(flight, AIRCRAFT[planeId].perf);
-  poseAircraft(flight, aircraft.group);
-  hud.setAircraft(AIRCRAFT[planeId].name);
-  refreshHangar();
+ if (!AIRCRAFT[id]) return;
+ planeId = id;
+ scene.remove(aircraft.group);
+ aircraft = createAircraft(planeId);
+ scene.add(aircraft.group);
+ applyPerformance(flight, AIRCRAFT[planeId].perf);
+ poseAircraft(flight, aircraft.group);
+ hud.setAircraft(AIRCRAFT[planeId].name);
+ refreshHangar();
 }
-
-/** Step the hangar choice one aeroplane along (or back). */
 function cyclePlane(step) {
-  const idx = AIRCRAFT_ORDER.indexOf(planeId);
-  selectPlane(AIRCRAFT_ORDER[(idx + step + AIRCRAFT_ORDER.length) % AIRCRAFT_ORDER.length]);
+ const idx = AIRCRAFT_ORDER.indexOf(planeId);
+ selectPlane(AIRCRAFT_ORDER[(idx + step + AIRCRAFT_ORDER.length) % AIRCRAFT_ORDER.length]);
 }
-
-/** Choose the weather preset: the wind, the light, the HUD chip and the hangar agree. */
 function setWeatherById(id) {
-  weather.set(id);
-  hud.setWeather(weather.current().name);
-  applyWeatherLook();
-  refreshHangar();
+ weather.set(id);
+ hud.setWeather(weather.current().name);
+ applyWeatherLook();
+ refreshHangar();
 }
-
-/** Step the weather one preset along the title screen's cycle. */
 function cycleWeather() {
-  const idx = WEATHER_ORDER.indexOf(weather.presetId);
-  setWeatherById(WEATHER_ORDER[(idx + 1) % WEATHER_ORDER.length]);
+ const idx = WEATHER_ORDER.indexOf(weather.presetId);
+ setWeatherById(WEATHER_ORDER[(idx + 1) % WEATHER_ORDER.length]);
 }
-
 hud.setAircraft(AIRCRAFT[planeId].name);
 hud.setWeather(weather.current().name);
 applyWeatherLook();
 refreshHangar();
 for (const btn of document.querySelectorAll('[data-plane]')) {
-  btn.addEventListener('click', () => selectPlane(btn.dataset.plane));
+ btn.addEventListener('click', () => selectPlane(btn.dataset.plane));
 }
 for (const btn of document.querySelectorAll('[data-wx]')) {
-  btn.addEventListener('click', () => setWeatherById(btn.dataset.wx));
+ btn.addEventListener('click', () => setWeatherById(btn.dataset.wx));
 }
-
 const titleScreen = document.getElementById('screen-title');
 const endScreen = document.getElementById('screen-end');
 const pauseScreen = document.getElementById('screen-pause');
-
-let screen = 'title'; // title | flying | paused | over
+let screen = 'title';
 let mission = null;
 let cameraMode = 'chase';
 let wasStalled = false;
+let bingoState = 'none';
 let titleOrbit = 0;
-
 function resize() {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+ const w = window.innerWidth;
+ const h = window.innerHeight;
+ renderer.setSize(w, h, false);
+ camera.aspect = w / h;
+ camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
 resize();
-
 function announce(text) {
-  status.textContent = text;
+ status.textContent = text;
 }
-
 function showScreen(which) {
-  titleScreen.classList.toggle('hidden', which !== 'title');
-  endScreen.classList.toggle('hidden', which !== 'over');
-  pauseScreen.classList.toggle('hidden', which !== 'paused');
+ hud.setAdvisory('');
+ titleScreen.classList.toggle('hidden', which !== 'title');
+ endScreen.classList.toggle('hidden', which !== 'over');
+ pauseScreen.classList.toggle('hidden', which !== 'paused');
 }
-
 function beginMission(id) {
-  if (mission) mission.dispose(scene);
-  const def = MISSIONS.find((m) => m.id === id) ?? MISSIONS[0];
-  mission = startMission(def, scene);
-  resetFlight(flight, getRunway('palma'), def.fuel);
-  applyPerformance(flight, AIRCRAFT[planeId].perf);
-  cameraMode = 'chase';
-  wasStalled = false;
-  screen = 'flying';
-  showScreen('flying');
-  audio.start();
-  hud.clearPhotos();
-  hud.setMission(def.name, def.brief);
-  hud.flash('THROTTLE UP — W', 1.8);
-  announce(`Flying ${def.name}. ${def.brief}.`);
+ if (mission) mission.dispose(scene);
+ const def = MISSIONS.find((m) => m.id === id) ?? MISSIONS[0];
+ mission = startMission(def, scene);
+ resetFlight(flight, getRunway('palma'), def.fuel);
+ applyPerformance(flight, AIRCRAFT[planeId].perf);
+ if (def.weather) setWeatherById(def.weather);
+ bingoState = 'none';
+ hud.setDecision(false);
+ cameraMode = 'chase';
+ wasStalled = false;
+ screen = 'flying';
+ showScreen('flying');
+ audio.start();
+ hud.clearPhotos();
+ hud.setMission(def.name, def.brief);
+ hud.flash('THROTTLE UP — W', 1.8);
+ announce(`Flying ${def.name}. ${def.brief}.`);
 }
-
 function endMission(outcome) {
-  screen = 'over';
-  // Bank the sortie's score with the pilot's standing — the rank climbs across the evening.
-  const banked = pilot.add(mission ? mission.score : 0);
-  document.getElementById('end-title').textContent = outcome.title;
-  document.getElementById('end-detail').textContent = outcome.detail;
-  document.getElementById('end-stats').innerHTML =
-    `Score <b>${Math.round(mission ? mission.score : 0)}</b> · Time <b>${formatTime(mission ? mission.time : 0)}</b><br>` +
-    `Fuel left <b>${Math.round(flight.fuel)}%</b> · Hull <b>${Math.round(flight.hull)}%</b><br>` +
-    `Pilot rank <b>${pilot.label()}</b>` +
-    (banked.promoted ? `<br><b>PROMOTED — ${banked.rank}!</b>` : '');
-  refreshHangar();
-  showScreen('over');
-  if (outcome.success) audio.fanfare();
-  else audio.fail();
-  announce(`${outcome.title}. ${outcome.detail}`);
+ screen = 'over';
+ hud.setDecision(false);
+ const banked = pilot.add(mission ? mission.score : 0);
+ document.getElementById('end-title').textContent = outcome.title;
+ document.getElementById('end-detail').textContent = outcome.detail;
+ document.getElementById('end-stats').innerHTML =
+  `Score <b>${Math.round(mission ? mission.score : 0)}</b> · Time <b>${formatTime(mission ? mission.time : 0)}</b><br>` +
+  `Fuel left <b>${Math.round(flight.fuel)}%</b> · Hull <b>${Math.round(flight.hull)}%</b><br>` +
+  `Pilot rank <b>${pilot.label()}</b>` +
+  (banked.promoted ? `<br><b>PROMOTED — ${banked.rank}!</b>` : '');
+ refreshHangar();
+ showScreen('over');
+ if (outcome.success) audio.fanfare();
+ else audio.fail();
+ announce(`${outcome.title}. ${outcome.detail}`);
 }
-
 function failMission(title, detail) {
-  endMission({ title, detail, success: false });
+ endMission({ title, detail, success: false });
 }
-
-/** Present one frame of flight events: sounds, flashes and endings. */
 function presentEvents(events, happenings) {
-  if (events & EVENT_TOOK_OFF) {
-    if (mission && mission.def.kind === 'delivery') hud.flash('AIRBORNE — FARREL ISLE LIES SOUTH-EAST', 2.2);
-    else hud.flash('AIRBORNE', 1.2);
+ if (events & EVENT_TOOK_OFF) {
+  if (mission && mission.def.kind === 'delivery') hud.flash('AIRBORNE — FARREL ISLE LIES SOUTH-EAST', 2.2);
+  else hud.flash('AIRBORNE', 1.2);
+ }
+ if (events & EVENT_TOUCHDOWN) {
+  const td = flight.lastTouchdown;
+  audio.thud(Math.min(1, Math.max(0, (-td.sink - 2) / 9) + (td.damage > 12 ? 0.3 : 0)));
+  if (mission && mission.def.kind === 'delivery' && td.runwayId === 'palma') {
+   hud.flash('WRONG FIELD — THE MAIL IS FOR FARREL!', 2.4);
+  } else if (td.grass) {
+   hud.flash('ROUGH FIELD LANDING', 1.8);
+  } else if (td.sink > -1.8) hud.flash('GREASED IT!', 1.8);
+  else if (td.sink > -3.2) hud.flash('SMOOTH LANDING', 1.8);
+  else if (td.sink > -5.5) hud.flash('FIRM ARRIVAL', 1.8);
+  else hud.flash(`HARD LANDING — HULL ${Math.round(flight.hull)}%`, 2.2);
+ }
+ if (events & EVENT_CRASHED) {
+  audio.thud(1);
+  failMission('CRASHED', 'The courier came down in the scenery. The mail, sadly, is confetti.');
+  return;
+ }
+ if (events & EVENT_DITCHED) {
+  audio.thud(0.8);
+  failMission('DITCHED', 'Down in the Aurelia sea. The pouch floats; the aeroplane does not.');
+  return;
+ }
+ for (const happening of happenings) {
+  if (happening.kind === 'ring') {
+   audio.chime();
+   hud.flash(`RING ${happening.index}/${happening.total}  +${happening.points}`, 1.5);
+  } else if (happening.kind === 'photo') {
+   audio.shutter();
+   hud.flashPhoto();
+   hud.addPhoto(happening.points);
+   hud.flash(`PHOTO ${happening.index}/${happening.total}  +${happening.points}`, 1.5);
+  } else if (happening.kind === 'photo-miss') {
+   hud.flash(happening.reason, 1.6);
+  } else if (happening.kind === 'away') {
+   hud.flash('CRATE AWAY', 0.9);
+  } else if (happening.kind === 'drop') {
+   if (happening.grade === 'BULLSEYE DROP') audio.chime();
+   else audio.thud(happening.splash ? 0.5 : 0.3);
+   hud.flash(`${happening.grade}  +${happening.points}`, 1.9);
+  } else if (happening.kind === 'note') {
+   hud.flash(happening.text, happening.seconds ?? 2.2);
+  } else if (happening.kind === 'complete') {
+   mission.score = happening.score;
+   pilot.completeSortie(mission.def.id);
+   endMission({ title: happening.title, detail: happening.detail, success: true });
+   return;
   }
-  if (events & EVENT_TOUCHDOWN) {
-    const td = flight.lastTouchdown;
-    audio.thud(Math.min(1, Math.max(0, (-td.sink - 2) / 9) + (td.damage > 12 ? 0.3 : 0)));
-    if (mission && mission.def.kind === 'delivery' && td.runwayId === 'palma') {
-      hud.flash('WRONG FIELD — THE MAIL IS FOR FARREL!', 2.4);
-    } else if (td.grass) {
-      hud.flash('ROUGH FIELD LANDING', 1.8);
-    } else if (td.sink > -1.8) hud.flash('GREASED IT!', 1.8);
-    else if (td.sink > -3.2) hud.flash('SMOOTH LANDING', 1.8);
-    else if (td.sink > -5.5) hud.flash('FIRM ARRIVAL', 1.8);
-    else hud.flash(`HARD LANDING — HULL ${Math.round(flight.hull)}%`, 2.2);
-  }
-  if (events & EVENT_CRASHED) {
-    audio.thud(1);
-    failMission('CRASHED', 'The courier came down in the scenery. The mail, sadly, is confetti.');
-    return;
-  }
-  if (events & EVENT_DITCHED) {
-    audio.thud(0.8);
-    failMission('DITCHED', 'Down in the Aurelia sea. The pouch floats; the aeroplane does not.');
-    return;
-  }
-  for (const happening of happenings) {
-    if (happening.kind === 'ring') {
-      audio.chime();
-      hud.flash(`RING ${happening.index}/${happening.total}  +${happening.points}`, 1.5);
-    } else if (happening.kind === 'photo') {
-      audio.shutter();
-      hud.flashPhoto();
-      hud.addPhoto(happening.points);
-      hud.flash(`PHOTO ${happening.index}/${happening.total}  +${happening.points}`, 1.5);
-    } else if (happening.kind === 'photo-miss') {
-      hud.flash(happening.reason, 1.6);
-    } else if (happening.kind === 'away') {
-      hud.flash('CRATE AWAY', 0.9);
-    } else if (happening.kind === 'drop') {
-      if (happening.grade === 'BULLSEYE DROP') audio.chime();
-      else audio.thud(happening.splash ? 0.5 : 0.3);
-      hud.flash(`${happening.grade}  +${happening.points}`, 1.9);
-    } else if (happening.kind === 'complete') {
-      mission.score = happening.score;
-      endMission({ title: happening.title, detail: happening.detail, success: true });
-      return;
-    }
-  }
-  if (flight.stalled && !wasStalled && screen === 'flying') hud.flash('STALL — NOSE DOWN, BUILD SPEED', 1.1);
-  wasStalled = flight.stalled;
-  if (screen === 'flying' && flight.fuel <= 0 && flight.onGround && flight.speed < 0.5) {
-    failMission('OUT OF FUEL', 'Bone dry on the ground. The isles are lovely this time of year; you may be here a while.');
-  }
+ }
+ if (flight.stalled && !wasStalled && screen === 'flying') hud.flash('STALL — NOSE DOWN, BUILD SPEED', 1.1);
+ wasStalled = flight.stalled;
+ if (screen === 'flying' && flight.fuel <= 0 && flight.onGround && flight.speed < 0.5) {
+  failMission('OUT OF FUEL', 'Bone dry on the ground. The isles are lovely this time of year; you may be here a while.');
+ }
 }
-
 function handleActions() {
-  const actions = input.takeActions();
-  if (screen === 'title') {
-    if (actions & ACTION_PLANE_NEXT) cyclePlane(1);
-    else if (actions & ACTION_PLANE_PREV) cyclePlane(-1);
-    else if (actions & ACTION_WEATHER) cycleWeather();
-    else if (actions & ACTION_MISSION_1) beginMission(1);
-    else if (actions & ACTION_MISSION_2) beginMission(2);
-    else if (actions & ACTION_MISSION_3) beginMission(3);
-    else if (actions & ACTION_MISSION_4) beginMission(4);
-    else if (actions & ACTION_MISSION_5) beginMission(5);
-    else if (actions & ACTION_CONFIRM) beginMission(1);
-    return;
+ const actions = input.takeActions();
+ if (screen === 'title') {
+  if (actions & ACTION_PLANE_NEXT) cyclePlane(1);
+  else if (actions & ACTION_PLANE_PREV) cyclePlane(-1);
+  else if (actions & ACTION_WEATHER) cycleWeather();
+  else {
+   const mi = MISSION_ACTIONS.findIndex((a) => actions & a);
+   if (mi >= 0) beginMission(mi + 1);
+   else if (actions & ACTION_CONFIRM) beginMission(1);
   }
-  if (screen === 'over') {
-    if (actions & ACTION_CONFIRM) beginMission(mission ? mission.def.id : 1);
-    else if (actions & ACTION_MENU) {
-      screen = 'title';
-      showScreen('title');
-    }
-    return;
+  return;
+ }
+ if (screen === 'over') {
+  if (actions & ACTION_CONFIRM) beginMission(mission ? mission.def.id : 1);
+  else if (actions & ACTION_MENU) {
+   screen = 'title';
+   showScreen('title');
   }
-  if ((actions & ACTION_DROP) && screen === 'flying' && mission && mission.drop) {
-    presentEvents(0, mission.drop(flight, wind.sample(nowSec).vector));
+  return;
+ }
+ if ((actions & ACTION_DROP) && screen === 'flying' && mission && mission.drop) {
+  presentEvents(0, mission.drop(flight, wind.sample(nowSec).vector));
+ }
+ if (bingoState === 'pending' && screen === 'flying' && mission) {
+  if (actions & ACTION_DIVERT) {
+   mission.divert();
+   bingoState = 'diverted';
+   hud.setDecision(false);
+   hud.flash('DIVERTING — PALMA FIELD', 2.2);
+  } else if (actions & ACTION_PRESS_ON) {
+   bingoState = 'pressed';
+   hud.setDecision(false);
+   hud.flash('PRESSING ON — MIND THE FUEL', 2.2);
   }
-  if (actions & ACTION_MUTE) announce(audio.toggleMute() ? 'Sound off.' : 'Sound on.');
-  if (actions & ACTION_CAMERA && (screen === 'flying' || screen === 'paused')) {
-    cameraMode = cameraMode === 'chase' ? 'cockpit' : 'chase';
+ }
+ if (actions & ACTION_MUTE) announce(audio.toggleMute() ? 'Sound off.' : 'Sound on.');
+ if (actions & ACTION_CAMERA && (screen === 'flying' || screen === 'paused')) {
+  cameraMode = cameraMode === 'chase' ? 'cockpit' : 'chase';
+ }
+ if (actions & ACTION_PAUSE) {
+  if (screen === 'flying') {
+   screen = 'paused';
+   showScreen('paused');
+  } else if (screen === 'paused') {
+   screen = 'flying';
+   showScreen('flying');
   }
-  if (actions & ACTION_PAUSE) {
-    if (screen === 'flying') {
-      screen = 'paused';
-      showScreen('paused');
-    } else if (screen === 'paused') {
-      screen = 'flying';
-      showScreen('flying');
-    }
-  }
+ }
 }
-
-for (const id of [1, 2, 3, 4, 5]) {
-  document.getElementById(`btn-mission-${id}`).addEventListener('click', () => beginMission(id));
+for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]) {
+ document.getElementById(`btn-mission-${id}`).addEventListener('click', () => beginMission(id));
 }
-
 const _fwd = new THREE.Vector3();
 const _desired = new THREE.Vector3();
 const _look = new THREE.Vector3();
 const _planeQuat = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
-
-/** Aim the camera for this frame: a lazy chase rig, the pilot's eyes, or the title orbit. */
 function updateCamera(dt, snap = false) {
-  _euler.set(flight.pitch, -flight.heading, -flight.bank, 'YXZ');
-  _planeQuat.setFromEuler(_euler);
-  _fwd.set(0, 0, -1).applyQuaternion(_planeQuat);
-
-  if (screen === 'title') {
-    aircraft.setCockpitView(false);
-    instruments.setVisible(false);
-    hud.setAttitudeVisible(false);
-    document.getElementById('hud-systems').style.display = '';
-    titleOrbit += dt * 0.07;
-    _desired.set(
-      flight.pos.x + Math.cos(titleOrbit) * 30,
-      flight.pos.y + 9,
-      flight.pos.z + Math.sin(titleOrbit) * 30,
-    );
-    camera.position.lerp(_desired, snap ? 1 : 1 - Math.exp(-dt * 2));
-    camera.up.set(0, 1, 0);
-    camera.lookAt(flight.pos.x, flight.pos.y + 1, flight.pos.z);
-    return;
-  }
-
-  if (cameraMode === 'cockpit') {
-    _desired.set(0, 1.52, -0.35).applyQuaternion(_planeQuat).add(flight.pos);
-    camera.position.copy(_desired);
-    camera.quaternion.copy(_planeQuat);
-    aircraft.setCockpitView(true);
-    instruments.setVisible(true);
-    hud.setAttitudeVisible(false);
-    document.getElementById('hud-systems').style.display = 'none';
-    return;
-  }
-
+ _euler.set(flight.pitch, -flight.heading, -flight.bank, 'YXZ');
+ _planeQuat.setFromEuler(_euler);
+ _fwd.set(0, 0, -1).applyQuaternion(_planeQuat);
+ if (screen === 'title') {
   aircraft.setCockpitView(false);
   instruments.setVisible(false);
-  hud.setAttitudeVisible(true);
+  hud.setAttitudeVisible(false);
   document.getElementById('hud-systems').style.display = '';
-  _desired.copy(flight.pos).addScaledVector(_fwd, -13.5);
-  _desired.y += 3.6;
-  const groundClear = Math.max(world.groundHeight(_desired.x, _desired.z), 0) + 2.2;
-  if (_desired.y < groundClear) _desired.y = groundClear;
-  camera.position.lerp(_desired, snap ? 1 : 1 - Math.exp(-dt * 5.5));
-  camera.up.set(Math.sin(-flight.bank) * 0.38, 1, 0).normalize();
-  _look.copy(flight.pos).addScaledVector(_fwd, 26);
-  _look.y += 1.4;
-  camera.lookAt(_look);
+  titleOrbit += dt * 0.07;
+  _desired.set(
+   flight.pos.x + Math.cos(titleOrbit) * 30,
+   flight.pos.y + 9,
+   flight.pos.z + Math.sin(titleOrbit) * 30,
+  );
+  camera.position.lerp(_desired, snap ? 1 : 1 - Math.exp(-dt * 2));
+  camera.up.set(0, 1, 0);
+  camera.lookAt(flight.pos.x, flight.pos.y + 1, flight.pos.z);
+  return;
+ }
+ if (cameraMode === 'cockpit') {
+  _desired.set(0, 1.52, -0.35).applyQuaternion(_planeQuat).add(flight.pos);
+  camera.position.copy(_desired);
+  camera.quaternion.copy(_planeQuat);
+  aircraft.setCockpitView(true);
+  instruments.setVisible(true);
+  hud.setAttitudeVisible(false);
+  document.getElementById('hud-systems').style.display = 'none';
+  return;
+ }
+ aircraft.setCockpitView(false);
+ instruments.setVisible(false);
+ hud.setAttitudeVisible(true);
+ document.getElementById('hud-systems').style.display = '';
+ _desired.copy(flight.pos).addScaledVector(_fwd, -13.5);
+ _desired.y += 3.6;
+ const groundClear = Math.max(world.groundHeight(_desired.x, _desired.z), 0) + 2.2;
+ if (_desired.y < groundClear) _desired.y = groundClear;
+ camera.position.lerp(_desired, snap ? 1 : 1 - Math.exp(-dt * 5.5));
+ camera.up.set(Math.sin(-flight.bank) * 0.38, 1, 0).normalize();
+ _look.copy(flight.pos).addScaledVector(_fwd, 26);
+ _look.y += 1.4;
+ camera.lookAt(_look);
 }
-
-/** Point the HUD diamond at the mission's current target, clamped to the frame's edge. */
 function updateMarker() {
-  if (!mission || screen !== 'flying') {
-    hud.setMarker(null);
-    return;
-  }
-  const target = mission.target();
-  if (!target) {
-    hud.setMarker(null);
-    return;
-  }
-  camera.updateMatrixWorld();
-  const projected = target.clone().project(camera);
-  const dist = Math.round(flight.pos.distanceTo(target));
-  if (projected.z > 1) {
-    hud.setMarker(null);
-    return;
-  }
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  const x = THREE.MathUtils.clamp(((projected.x * 0.5 + 0.5) * w), 46, w - 46);
-  const y = THREE.MathUtils.clamp(((-projected.y * 0.5 + 0.5) * h), 90, h - 60);
-  hud.setMarker(x, y, `${dist} m`);
+ if (!mission || screen !== 'flying') {
+  hud.setMarker(null);
+  return;
+ }
+ const target = mission.target();
+ if (!target) {
+  hud.setMarker(null);
+  return;
+ }
+ camera.updateMatrixWorld();
+ const projected = target.clone().project(camera);
+ const dist = Math.round(flight.pos.distanceTo(target));
+ if (projected.z > 1) {
+  hud.setMarker(null);
+  return;
+ }
+ const w = window.innerWidth;
+ const h = window.innerHeight;
+ const x = THREE.MathUtils.clamp(((projected.x * 0.5 + 0.5) * w), 46, w - 46);
+ const y = THREE.MathUtils.clamp(((-projected.y * 0.5 + 0.5) * h), 90, h - 60);
+ hud.setMarker(x, y, `${dist} m`);
 }
-
-/** One render of the current state with every overlay painted. */
+function radioLine(t) {
+ const w = wind.sample(t);
+ const wdir = String(((Math.round((w.dir * 180) / Math.PI) % 360) + 360) % 360).padStart(3, '0');
+ const wkt = Math.round(w.speed * 1.944);
+ if (screen === 'title') return `PALMA TOWER — WIND ${wdir} AT ${wkt} KT`;
+ if (bingoState === 'pending') return 'PALMA TOWER — BINGO STATE, SAY INTENTIONS';
+ if (weather.presetId === 'STORM') return 'CENTRE — SQUALL LINE OVER THE ISLES, GUSTS';
+ if (screen === 'flying' && flight.fuel <= 30) return 'PALMA TOWER — FUEL NOTED, HOME IN SIGHT';
+ if (screen === 'flying' && traffic.positions().some((p) => flight.pos.distanceTo(p) < 600)) {
+  return 'CENTRE — TRAFFIC IN YOUR SECTOR, LOOKOUT';
+ }
+ if (mission && screen === 'flying' && mission.target() && flight.pos.distanceTo(mission.target()) < 700) {
+  return 'PALMA TOWER — MARK IN SIGHT, REPORT PASSING';
+ }
+ return 'AURELIA CENTRE — COURSE CLEAR, CARRY ON';
+}
+function panelHead(def) {
+ const n = pilot.flownCount();
+ return n ? `CAMPAIGN ${n}/13 FLOWN — GOALS` : `STAGE ${def.stage} · SORTIE ${def.id}/13 — GOALS`;
+}
+function panelLines(m) {
+ const ticks = MISSIONS
+  .filter((d) => d.id !== m.def.id && pilot.hasFlown(d.id))
+  .slice(0, 4)
+  .map((d) => ({ text: d.goal, done: true }));
+ return ticks.concat(m.objectives(flight));
+}
 function drawFrame(dt, t) {
-  world.update(dt, t);
-  traffic.update(t);
-  weather.update(dt, t, flight.pos);
-  applyWeatherLook();
-  aircraft.spinPropeller(dt, screen === 'flying' || screen === 'paused' ? flight.throttle : 0.25);
-  poseAircraft(flight, aircraft.group);
-  updateCamera(dt);
-  hud.updateFlight(flight);
-  hud.drawAttitude(flight);
-  hud.updateWind(wind.sample(t), flight.heading);
-  if (mission) {
-    hud.updateScore(mission.score, mission.time);
-    hud.setMission(mission.def.name, mission.goalText());
-    hud.setObjectives(`MISSION ${mission.def.id} OF 5`, mission.objectives(flight));
-  }
-  islesMap.draw(flight, mission && screen === 'flying' ? mission.target() : null);
-  hud.tick();
-  updateMarker();
-  if (cameraMode === 'cockpit' && screen !== 'title') instruments.draw(flight);
-  renderer.render(scene, camera);
-}
-
-function runGame() {
-  let accumulator = 0;
-  let last = performance.now();
-  function frame(now) {
-    requestAnimationFrame(frame);
-    const dt = Math.min((now - last) / 1000, 0.25);
-    last = now;
-    nowSec = now / 1000;
-    handleActions();
-    if (screen === 'flying') {
-      accumulator += dt;
-      const breeze = wind.sample(nowSec).vector;
-      let guard = 0;
-      while (accumulator >= STEP && screen === 'flying' && guard < 8) {
-        const events = stepFlight(flight, input.flightInput(), STEP, world);
-        // The wind's push: a gentle drift on a flying aeroplane, nothing on the ground.
-        if (!flight.onGround) flight.pos.addScaledVector(breeze, STEP * 0.55);
-        const happenings = mission ? mission.update(STEP, flight, now / 1000) : [];
-        presentEvents(events, happenings);
-        accumulator -= STEP;
-        guard += 1;
-      }
-      audio.update(flight.throttle, flight.speed, true);
-    } else {
-      accumulator = 0;
-      audio.update(0, 0, false);
-    }
-    drawFrame(dt, now / 1000);
-  }
-  announce('Golden Isles Courier. Choose a mission: 1, 2, 3, 4 or 5.');
-  requestAnimationFrame(frame);
-}
-
-/** Stage one frozen moment of play for its screenshot, then signal readiness. */
-function runShot(name) {
-  const desc = describeShot(name) ?? describeShot('cover');
-  showScreen('none');
-  // The staged moment flies its own aeroplane and weather when the descriptor names them;
-  // traffic rides along unless the descriptor (or a ?traffic=off comparison pass) hides it.
-  if (desc.plane) selectPlane(desc.plane);
-  setWeatherById(desc.weather ?? 'BREEZY');
-  const showTraffic = desc.traffic !== false && params.get('traffic') !== 'off';
-  traffic.group.visible = showTraffic;
-  const def = MISSIONS.find((m) => m.id === desc.mission);
-  mission = startMission(def, scene);
-  mission.ringIndex = desc.ringIndex;
-  mission.score = desc.score;
-  mission.time = desc.time;
-  mission.leftGround = true;
-  if (desc.gateIndex) {
-    // Harbour frames are already in the pouch. Pin each thumbnail the way play does —
-    // hud.addPhoto copies the game's own canvas — so pose and render every snapped gate's
-    // crossing; the final pose below then overwrites the flight state.
-    mission.gateIndex = desc.gateIndex;
-    mission.photos = desc.gateIndex;
-    const scores = desc.photoScores ?? [desc.photoPoints];
-    for (let i = 0; i < desc.gateIndex; i += 1) {
-      const taken = mission.gates[i];
-      flight.pos.set(taken.position.x, desc.photoAlt, taken.position.z);
-      flight.heading = (taken.userData.headingDeg * Math.PI) / 180;
-      flight.pitch = 0;
-      flight.bank = 0;
-      flight.speed = desc.speed;
-      flight.throttle = desc.throttle;
-      flight.onGround = false;
-      cameraMode = desc.camera;
-      screen = 'flying';
-      poseAircraft(flight, aircraft.group);
-      world.update(0, 1.4);
-      traffic.update(1.4);
-      weather.update(0, 1.4, flight.pos);
-      updateCamera(0.016, true);
-      renderer.render(scene, camera);
-      hud.addPhoto(scores[Math.min(i, scores.length - 1)]);
-    }
-  }
-  flight.pos.set(desc.pos[0], desc.pos[1], desc.pos[2]);
-  flight.heading = (desc.headingDeg * Math.PI) / 180;
-  flight.pitch = (desc.pitchDeg * Math.PI) / 180;
-  flight.bank = (desc.bankDeg * Math.PI) / 180;
-  flight.speed = desc.speed;
-  flight.throttle = desc.throttle;
-  flight.fuel = desc.fuel;
-  flight.hull = desc.hull;
-  flight.onGround = false;
-  flight.verticalSpeed = Math.sin(flight.pitch) * flight.speed;
-  cameraMode = desc.camera;
-  screen = 'flying';
-  mission.update(0.016, flight, 1.4);
-  poseAircraft(flight, aircraft.group);
-  world.update(0, 1.4);
-  traffic.update(1.4);
-  weather.update(0, 1.4, flight.pos);
-  updateCamera(0.016, true);
-  hud.updateFlight(flight);
-  hud.drawAttitude(flight);
+ world.update(dt, t);
+ traffic.update(t);
+ weather.update(dt, t, flight.pos);
+ applyWeatherLook();
+ aircraft.spinPropeller(dt, screen === 'flying' || screen === 'paused' ? flight.throttle : 0.25);
+ poseAircraft(flight, aircraft.group);
+ updateCamera(dt);
+ hud.updateFlight(flight);
+ hud.drawAttitude(flight);
+ hud.drawTapes(flight);
+ hud.updateWind(wind.sample(t), flight.heading);
+ if (mission) {
   hud.updateScore(mission.score, mission.time);
-  hud.setMission(def.name, mission.goalText());
-  hud.setObjectives(`MISSION ${def.id} OF 5`, mission.objectives(flight));
-  islesMap.draw(flight, mission.target());
-  updateMarker();
-  hud.updateWind(wind.sample(1.4), flight.heading);
-  if (cameraMode === 'cockpit') {
-    instruments.setVisible(true);
-    instruments.draw(flight);
-  }
-  let painted = 0;
-  function paint() {
-    renderer.render(scene, camera);
-    painted += 1;
-    if (painted < 3) requestAnimationFrame(paint);
-    else window.__shotReady = true;
-  }
-  requestAnimationFrame(paint);
+  hud.setMission(mission.def.name, mission.goalText());
+  hud.setObjectives(panelHead(mission.def), panelLines(mission));
+ }
+ hud.setRadio(radioLine(t));
+ hud.setAdvisory(screen === 'flying' && mission ? mission.advisory(flight) : '');
+ islesMap.draw(flight, mission && screen === 'flying' ? mission.target() : null);
+ hud.tick();
+ updateMarker();
+ if (cameraMode === 'cockpit' && screen !== 'title') instruments.draw(flight);
+ renderer.render(scene, camera);
 }
-
+function runGame() {
+ let accumulator = 0;
+ let last = performance.now();
+ function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - last) / 1000, 0.25);
+  last = now;
+  nowSec = now / 1000;
+  handleActions();
+  if (screen === 'flying') {
+   flight.stormFactor = weather.presetId === 'STORM' ? 1 : 0;
+   if (mission && !mission.done && bingoState === 'none' && flight.fuel <= 25 && flight.fuel > 0) {
+    bingoState = 'pending';
+    hud.setDecision(true);
+   }
+   accumulator += dt;
+   const breeze = wind.sample(nowSec).vector;
+   let guard = 0;
+   while (accumulator >= STEP && screen === 'flying' && guard < 8) {
+    const events = stepFlight(flight, input.flightInput(), STEP, world);
+    if (!flight.onGround) flight.pos.addScaledVector(breeze, STEP * 0.55);
+    const happenings = mission ? mission.update(STEP, flight, now / 1000) : [];
+    presentEvents(events, happenings);
+    accumulator -= STEP;
+    guard += 1;
+   }
+   audio.update(flight.throttle, flight.speed, true);
+  } else {
+   accumulator = 0;
+   audio.update(0, 0, false);
+  }
+  drawFrame(dt, now / 1000);
+ }
+ announce('Golden Isles Courier. The campaign board: thirteen sorties in four stages.');
+ requestAnimationFrame(frame);
+}
+function runShot(name) {
+ const desc = describeShot(name) ?? describeShot('cover');
+ showScreen('none');
+ if (desc.plane) selectPlane(desc.plane);
+ setWeatherById(desc.weather ?? 'BREEZY');
+ const showTraffic = desc.traffic !== false && params.get('traffic') !== 'off';
+ traffic.group.visible = showTraffic;
+ const def = MISSIONS.find((m) => m.id === desc.mission);
+ mission = startMission(def, scene);
+ mission.ringIndex = desc.ringIndex;
+ mission.score = desc.score;
+ mission.time = desc.time;
+ mission.leftGround = true;
+ for (const id of desc.flown ?? []) pilot.completeSortie(id);
+ if (desc.gateIndex) {
+  mission.gateIndex = desc.gateIndex;
+  mission.photos = desc.gateIndex;
+  const scores = desc.photoScores ?? [desc.photoPoints];
+  for (let i = 0; i < desc.gateIndex; i += 1) {
+   const taken = mission.gates[i];
+   flight.pos.set(taken.position.x, desc.photoAlt, taken.position.z);
+   flight.heading = (taken.userData.headingDeg * Math.PI) / 180;
+   flight.pitch = 0;
+   flight.bank = 0;
+   flight.speed = desc.speed;
+   flight.throttle = desc.throttle;
+   flight.onGround = false;
+   cameraMode = desc.camera;
+   screen = 'flying';
+   poseAircraft(flight, aircraft.group);
+   world.update(0, 1.4);
+   traffic.update(1.4);
+   weather.update(0, 1.4, flight.pos);
+   updateCamera(0.016, true);
+   renderer.render(scene, camera);
+   hud.addPhoto(scores[Math.min(i, scores.length - 1)]);
+  }
+ }
+ flight.pos.set(desc.pos[0], desc.pos[1], desc.pos[2]);
+ flight.heading = (desc.headingDeg * Math.PI) / 180;
+ flight.pitch = (desc.pitchDeg * Math.PI) / 180;
+ flight.bank = (desc.bankDeg * Math.PI) / 180;
+ flight.speed = desc.speed;
+ flight.throttle = desc.throttle;
+ flight.fuel = desc.fuel;
+ flight.hull = desc.hull;
+ flight.wearEngine = desc.wearEngine ?? 0;
+ flight.wearProp = desc.wearProp ?? 0;
+ flight.onGround = false;
+ flight.verticalSpeed = Math.sin(flight.pitch) * flight.speed;
+ cameraMode = desc.camera;
+ screen = 'flying';
+ mission.update(0.016, flight, 1.4);
+ poseAircraft(flight, aircraft.group);
+ world.update(0, 1.4);
+ traffic.update(1.4);
+ weather.update(0, 1.4, flight.pos);
+ updateCamera(0.016, true);
+ hud.updateFlight(flight);
+ hud.drawAttitude(flight);
+ hud.drawTapes(flight);
+ hud.updateScore(mission.score, mission.time);
+ hud.setMission(def.name, mission.goalText());
+ hud.setObjectives(panelHead(def), panelLines(mission));
+ hud.setRadio(desc.radio ?? '');
+ hud.setDecision(!!desc.decision);
+ if (desc.decision) bingoState = 'pending';
+ if (desc.flash) hud.flash(desc.flash);
+ hud.setAdvisory(mission.advisory(flight));
+ islesMap.draw(flight, mission.target());
+ updateMarker();
+ hud.updateWind(wind.sample(1.4), flight.heading);
+ if (cameraMode === 'cockpit') {
+  instruments.setVisible(true);
+  instruments.draw(flight);
+ }
+ let painted = 0;
+ function paint() {
+  renderer.render(scene, camera);
+  painted += 1;
+  if (painted < 3) requestAnimationFrame(paint);
+  else window.__shotReady = true;
+ }
+ requestAnimationFrame(paint);
+}
 if (shotName) runShot(shotName);
 else runGame();
-
-// A handle for automated play-testing: the live scene, camera and flight state.
 window.__game = {
-  scene, camera, renderer, flight, world, traffic, weather, pilot, wind,
-  get aircraft() { return aircraft; },
-  get mission() { return mission; },
-  hangar: {
-    selectPlane,
-    setWeather: setWeatherById,
-    pilot,
-    get planeId() { return planeId; },
-    get weatherId() { return weather.presetId; },
-  },
+ scene, camera, renderer, flight, world, traffic, weather, pilot, wind,
+ get aircraft() { return aircraft; },
+ get mission() { return mission; },
+ hangar: {
+  selectPlane,
+  setWeather: setWeatherById,
+  pilot,
+  get planeId() { return planeId; },
+  get weatherId() { return weather.presetId; },
+ },
 };
