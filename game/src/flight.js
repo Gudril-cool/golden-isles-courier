@@ -15,6 +15,23 @@ export const STALL_SPEED = 24; // m/s: below this the wing gives up
 const GEAR_HEIGHT = 1.2; // metres from the aircraft origin to the wheels
 const WORLD_EDGE = 4700;
 
+/**
+ * The tourer's performance, and the flight model's yardstick: engine push, the drag that
+ * caps level speed, stall and liftoff speeds, fuel burn, and pitch/bank eagerness. Each
+ * hangar aeroplane (aircraft.js) carries its own set; applyPerformance fits one to a state.
+ */
+export const CRUISE_PERF = {
+  airAccel: 11.5, groundAccel: 15, dragK: 0.0055,
+  stallSpeed: 24, liftSpeed: 26,
+  burnBase: 0.045, burnPower: 0.16,
+  pitchRate: 2.2, bankRate: 2.6,
+};
+
+/** Fit an aeroplane's performance (from the aircraft.js roster) to a flight state. */
+export function applyPerformance(state, perf) {
+  state.perf = { ...perf };
+}
+
 /** A fresh flight state, parked at the start of the Palma strip. */
 export function createFlight() {
   return {
@@ -30,6 +47,7 @@ export function createFlight() {
     verticalSpeed: 0,
     stalled: false,
     lastTouchdown: null,
+    perf: { ...CRUISE_PERF },
   };
 }
 
@@ -67,20 +85,19 @@ export function altitudeFeet(state) {
 }
 
 /**
- * Advance the flight by dt seconds against the pilot's input
- * ({ pitch: -1..1 climb-positive, bank: -1..1 right-positive, throttle: -1..1, brake: bool })
- * and the world's ground. Returns an EVENT_* bitmask; a touchdown's details land on
- * state.lastTouchdown ({ sink, speed, bankDeg, runwayId|null, grass }).
+ * Advance the flight by dt seconds against the pilot's input and the world's ground.
+ * Returns an EVENT_* bitmask; a touchdown's details land on state.lastTouchdown.
  */
 export function stepFlight(state, input, dt, world) {
   let events = 0;
+  const perf = state.perf ?? CRUISE_PERF;
   const power = state.fuel > 0 ? state.throttle : 0;
 
   state.throttle = THREE.MathUtils.clamp(state.throttle + input.throttle * dt * 0.5, 0, 1);
-  state.fuel = Math.max(0, state.fuel - dt * (0.045 + power * 0.16));
+  state.fuel = Math.max(0, state.fuel - dt * (perf.burnBase + power * perf.burnPower));
 
   if (state.onGround) {
-    const accel = power * 15 - state.speed * 0.22 - (input.brake ? 9 : 0);
+    const accel = power * perf.groundAccel - state.speed * 0.22 - (input.brake ? 9 : 0);
     state.speed = Math.max(0, state.speed + accel * dt);
     state.heading += input.bank * dt * 0.45 * Math.min(1, state.speed / 30);
     state.bank = THREE.MathUtils.lerp(state.bank, input.bank * 0.12, 1 - Math.exp(-dt * 6));
@@ -93,7 +110,7 @@ export function stepFlight(state, input, dt, world) {
     }
     state.pos.y = Math.max(world.groundHeight(state.pos.x, state.pos.z), 0) + GEAR_HEIGHT;
     state.verticalSpeed = 0;
-    if (state.speed > 26 && input.pitch > 0.2 && state.fuel >= 0) {
+    if (state.speed > perf.liftSpeed && input.pitch > 0.2 && state.fuel >= 0) {
       state.onGround = false;
       state.pitch = 0.12;
       events |= EVENT_TOOK_OFF;
@@ -103,21 +120,21 @@ export function stepFlight(state, input, dt, world) {
 
   // In the air: bank toward the pilot's ask, turn with the bank, pitch toward the ask.
   const bankTarget = input.bank * 1.02;
-  state.bank += (bankTarget - state.bank) * (1 - Math.exp(-dt * 2.6));
+  state.bank += (bankTarget - state.bank) * (1 - Math.exp(-dt * perf.bankRate));
   const turnRate = (9.8 * Math.tan(state.bank)) / Math.max(state.speed, 20);
   state.heading += turnRate * dt * 0.9;
 
   let pitchTarget = input.pitch * 0.5;
-  const stalled = state.speed < STALL_SPEED;
-  if (stalled) pitchTarget -= (STALL_SPEED - state.speed) * 0.022;
+  const stalled = state.speed < perf.stallSpeed;
+  if (stalled) pitchTarget -= (perf.stallSpeed - state.speed) * 0.022;
   state.stalled = stalled;
-  state.pitch += (pitchTarget - state.pitch) * (1 - Math.exp(-dt * 2.2));
+  state.pitch += (pitchTarget - state.pitch) * (1 - Math.exp(-dt * perf.pitchRate));
 
-  const accel = power * 11.5 - 0.0055 * state.speed * state.speed - Math.sin(state.pitch) * 5.4;
+  const accel = power * perf.airAccel - perf.dragK * state.speed * state.speed - Math.sin(state.pitch) * 5.4;
   state.speed = THREE.MathUtils.clamp(state.speed + accel * dt, 0, 96);
 
   let vy = Math.sin(state.pitch) * state.speed;
-  if (stalled) vy -= (STALL_SPEED - state.speed) * 0.6;
+  if (stalled) vy -= (perf.stallSpeed - state.speed) * 0.6;
   vy -= (1 - Math.cos(state.bank)) * state.speed * 0.1;
   state.verticalSpeed = vy;
 

@@ -28,19 +28,34 @@ arrow and strength so you can allow for it. Stall, ditch and crash states all
 read as what happened, and landings are graded from *GREASED IT!* to
 *HARD LANDING*.
 
+Before any of that, the hangar: three aeroplanes wait on the title screen —
+the **Kestrel** trainer (forgiving, low-stalling, sips fuel), the **Voyager**
+tourer (balanced, long-winged) and the **Comet** racer (fast, swept-winged
+and thirsty) — each with its own speed, climb manners, stall and burn, flown
+by the same flight model. Beside them, the evening's **weather** is yours to
+call: Clear, Breezy, or a gusting Storm with rain streaks and far-off
+lightning, the wind doubling under it. And every point you bank climbs your
+**pilot rank** — Rookie, Wingman, Captain, Ace — shown on the title screen
+and on every results board.
+
 - Chase camera and a cockpit view (C) with lit, live instruments: attitude
   indicator, airspeed, altimeter and heading, all driven by the flight model.
-- HUD with altitude, speed and heading, fuel and hull, wind, mission and score.
+- HUD with altitude, speed and heading, fuel and hull, wind, the aeroplane
+  and weather chips, mission and score.
 - Procedural islands, a volcano with a lava crater, the town of Port Aurelia
-  with its windows lit for the evening, a lighthouse whose beam sweeps the
-  harbour, boats at anchor and a ferry under way trailing its wake, gulls
-  circling the coast, and the sun's glitter path on the sea — all art
-  generated in code, all sound synthesised with WebAudio. No network, no
-  external assets: serve the folder and open `game/index.html`.
+  grown to a real town — a market square with its church, a waterfront row, a
+  working pier with a moored coaster, dirt roads climbing to the field — a
+  second fishing village down the shore, two other aeroplanes working their
+  own circuits in the same sky, a lighthouse whose beam sweeps the harbour,
+  boats at anchor and a ferry under way trailing its wake, gulls circling the
+  coast, and the sun's glitter path on the sea — all art generated in code,
+  all sound synthesised with WebAudio. No network, no external assets:
+  serve the folder and open `game/index.html`.
 
 **Controls** — W/S throttle · ↑/↓ pitch · ←/→ or A/D bank · Space brakes ·
 B drop a supply crate · C cockpit/chase camera · P pause · M mute ·
-1/2/3/4/5 launch a mission.
+1/2/3/4/5 launch a mission · on the ramp, ←/→ choose the aeroplane and
+T choose the weather.
 
 Run it locally with `node serve.ts`, then open http://localhost:8080.
 `node main.ts` hands the entry in: it copies `game/` and `screenshots/` to

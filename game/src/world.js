@@ -1,14 +1,10 @@
-// The Aurelia Isles: a seeded, golden-hour archipelago built with three.js — Palma with its
-// hilltop field and coastal town, the volcano Mount Cindera, Farrel Isle across the water, and
-// a scatter of islets. The low sun draws a glitter path on the sea, and boats ride at anchor in
-// Port Aurelia's harbour. One analytic height function grows the terrain mesh, places every
-// building and tree, and answers the flight model's ground queries, so what you see is exactly
-// what you can hit.
+// The Aurelia Isles: a seeded, golden-hour archipelago. One analytic height function grows
+// the terrain, places every building and tree, and answers the flight model's ground queries.
 import * as THREE from 'three';
 import { createRandom, randomRange } from './random.js';
 
 /** Island bumps: centre, gaussian height and spread, in metres. */
-const ISLANDS = [
+export const ISLANDS = [
   { name: 'Palma', x: -1500, z: -800, height: 150, spread: 620 },
   { name: 'Cindera', x: 1600, z: -1700, height: 90, spread: 560 },
   { name: 'Farrel Isle', x: 1800, z: 1600, height: 110, spread: 500 },
@@ -27,7 +23,31 @@ export const LANDMARKS = {
   farrel: { x: 1800, z: 1600 },
   town: { x: -2550, z: -550 },
   lighthouse: { x: -2680, z: -500 },
+  village: { x: -2350, z: 60 },
 };
+
+/** Palma's dirt roads as waypoint paths: town to field, town to pier, shore to village. */
+export const ROAD_PATHS = [
+  [[-2560, -560], [-2450, -600], [-2200, -680], [-1950, -760], [-1750, -880], [-1640, -1020]],
+  [[-2620, -520], [-2700, -490], [-2770, -455]],
+  [[-2480, -470], [-2430, -260], [-2380, -60], [-2355, 40]],
+];
+
+/** Distance from a point to the nearest road path, in metres (for keeping scatters clear). */
+function distToRoads(x, z) {
+  let best = Infinity;
+  for (const path of ROAD_PATHS) {
+    for (let i = 0; i < path.length - 1; i += 1) {
+      const [ax, az] = path[i];
+      const [bx, bz] = path[i + 1];
+      const abx = bx - ax;
+      const abz = bz - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz)));
+      best = Math.min(best, Math.hypot(x - (ax + abx * t), z - (az + abz * t)));
+    }
+  }
+  return best;
+}
 
 /** The volcano's cone, added on top of its island bump. */
 const VOLCANO = { x: 1600, z: -1700, radius: 800, height: 470, crater: 130 };
@@ -71,10 +91,7 @@ function runwayLocal(runway, x, z) {
 
 for (const runway of RUNWAYS) runway.elev = rawHeight(runway.x, runway.z);
 
-/**
- * The one height function: raw land with each runway's plateau blended in. The terrain mesh,
- * the building scatter and the flight model all sample this, never rawHeight.
- */
+/** The one height function: raw land with runway plateaus blended in; everything samples this. */
 export function terrainHeight(x, z) {
   let h = rawHeight(x, z);
   for (const runway of RUNWAYS) {
@@ -105,12 +122,8 @@ export function getRunway(id) {
 }
 
 /**
- * A building facade as two canvas textures drawn in one pass: the diffuse map (warm walls
- * and many small windows in a regular grid, or one ribbon window per floor for the strip
- * style) and a matching glow map — black but for the lit windows — so the material's emissive
- * channel can make the lit windows genuinely shine as the golden hour deepens. The windows
- * stay small against the wall — a few big panes read as dice pips from the air, a fine grid of
- * little ones reads as a building.
+ * A building facade as two canvas textures: the diffuse map and a matching glow map —
+ * black but for the lit windows — so lit windows shine at dusk.
  */
 function facadeTexture(random, base, litRatio, style) {
   const canvas = document.createElement('canvas');
@@ -175,7 +188,7 @@ function runwayTexture() {
   return texture;
 }
 
-/** The gradient sky dome with a low sun baked into the shader, plus the sun's glow sprite. */
+/** The gradient sky dome, sun baked into the shader, plus the sun's glow sprite. */
 function buildSky(scene, sunDir) {
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(12000, 32, 16),
@@ -217,7 +230,7 @@ function buildSky(scene, sunDir) {
   scene.add(sky);
 }
 
-/** The terrain mesh: the height function sampled on a grid, flat-shaded, coloured by height and slope. */
+/** The terrain mesh: the height function on a grid, flat-shaded, coloured by height/slope. */
 function buildTerrain(random) {
   const size = 9800;
   const segments = 190;
@@ -322,39 +335,11 @@ function buildRunway(runway, withBuildings) {
   return group;
 }
 
-/** The coastal town of Port Aurelia and its lighthouse, scattered by the seeded random source. */
-function buildTown(random) {
+/**
+ * Render a settlement's placements: one instanced mesh per facade variant, plus roof slabs.
+ */
+function renderBuildings(facades, placements, random) {
   const group = new THREE.Group();
-  const facades = [
-    facadeTexture(random, '#d9c6a5', 0.55, 'grid'),
-    facadeTexture(random, '#c9d4d8', 0.45, 'strips'),
-    facadeTexture(random, '#e0b49a', 0.62, 'grid'),
-  ];
-  // Scatter the placements first, so the town can be built as one instanced mesh per facade
-  // variant — the buildings genuinely differ — plus one instanced mesh of roof slabs whose
-  // terracotta and flat colours cap the walls (and hide the facade the box maps onto its top).
-  const placements = [];
-  let guard = 0;
-  while (placements.length < 118 && guard < 3000) {
-    guard += 1;
-    const angle = random() * Math.PI * 2;
-    const dist = Math.sqrt(random()) * 300;
-    const x = LANDMARKS.town.x + Math.cos(angle) * dist;
-    const z = LANDMARKS.town.z + Math.sin(angle) * dist * 0.8;
-    const h = terrainHeight(x, z);
-    if (h < 3 || h > 55) continue;
-    placements.push({
-      x,
-      z,
-      ground: h,
-      w: randomRange(random, 12, 26),
-      d: randomRange(random, 12, 26),
-      height: randomRange(random, 10, 34) * (1 - dist / 800),
-      rot: randomRange(random, 0, Math.PI),
-      variant: Math.floor(random() * facades.length),
-      shade: randomRange(random, 0.8, 1.05),
-    });
-  }
   const box = new THREE.BoxGeometry(1, 1, 1);
   box.translate(0, 0.5, 0);
   const dummy = new THREE.Object3D();
@@ -394,6 +379,106 @@ function buildTown(random) {
     roofs.setColorAt(i, tint.set(roofColours[Math.floor(random() * roofColours.length)]));
   });
   group.add(roofs);
+  return group;
+}
+
+/** Port Aurelia and its lighthouse, scattered by the seeded random source. */
+function buildTown(random) {
+  const group = new THREE.Group();
+  const facades = [
+    facadeTexture(random, '#d9c6a5', 0.55, 'grid'),
+    facadeTexture(random, '#c9d4d8', 0.45, 'strips'),
+    facadeTexture(random, '#e0b49a', 0.62, 'grid'),
+  ];
+  // Scatter placements packed tight; the square stays clear, no house on a road.
+  const PLAZA = { x: -2516, z: -514 };
+  const placements = [];
+  let guard = 0;
+  while (placements.length < 196 && guard < 6000) {
+    guard += 1;
+    const angle = random() * Math.PI * 2;
+    const dist = Math.sqrt(random()) * 330;
+    const x = LANDMARKS.town.x + Math.cos(angle) * dist;
+    const z = LANDMARKS.town.z + Math.sin(angle) * dist * 0.82;
+    const h = terrainHeight(x, z);
+    if (h < 3 || h > 55) continue;
+    if (Math.hypot(x - PLAZA.x, z - PLAZA.z) < 27) continue;
+    if (distToRoads(x, z) < 8) continue;
+    placements.push({
+      x,
+      z,
+      ground: h,
+      w: randomRange(random, 12, 26),
+      d: randomRange(random, 12, 26),
+      height: randomRange(random, 10, 34) * (1 - dist / 900),
+      rot: randomRange(random, 0, Math.PI),
+      variant: Math.floor(random() * facades.length),
+      shade: randomRange(random, 0.8, 1.05),
+    });
+  }
+  // The waterfront row: larger houses along the shore — the town's harbour face.
+  const shoreLine = [[-2715, -250], [-2745, -330], [-2770, -410], [-2790, -490], [-2800, -570], [-2810, -650]];
+  for (const [sx, sz] of shoreLine) {
+    const x = sx + randomRange(random, -7, 7);
+    const z = sz + randomRange(random, -9, 9);
+    placements.push({
+      x,
+      z,
+      ground: Math.max(terrainHeight(x, z), 0.4),
+      w: randomRange(random, 19, 27),
+      d: randomRange(random, 14, 20),
+      height: randomRange(random, 14, 24),
+      rot: Math.PI / 2 + randomRange(random, -0.16, 0.16),
+      variant: Math.floor(random() * facades.length),
+      shade: randomRange(random, 0.85, 1.05),
+    });
+  }
+  group.add(renderBuildings(facades, placements, random));
+
+  // The market square: stone disc, church and spire, market stalls.
+  const plazaGround = terrainHeight(PLAZA.x, PLAZA.z);
+  const plaza = new THREE.Mesh(
+    new THREE.CircleGeometry(15, 24),
+    new THREE.MeshStandardMaterial({ color: 0x9a917f, roughness: 1 }),
+  );
+  plaza.rotation.x = -Math.PI / 2;
+  plaza.position.set(PLAZA.x, plazaGround + 0.3, PLAZA.z);
+  group.add(plaza);
+  const church = new THREE.Group();
+  const churchWall = new THREE.MeshStandardMaterial({ color: 0xf2ede2, roughness: 0.85 });
+  const churchRoof = new THREE.MeshStandardMaterial({ color: 0x8a4a34, roughness: 0.85 });
+  const nave = new THREE.Mesh(new THREE.BoxGeometry(11, 14, 22), churchWall);
+  nave.position.y = 7;
+  const towerBlock = new THREE.Mesh(new THREE.BoxGeometry(5.5, 29, 5.5), churchWall);
+  towerBlock.position.set(0, 14.5, -9);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(4.4, 9, 4), churchRoof);
+  spire.position.set(0, 33.5, -9);
+  spire.rotation.y = Math.PI / 4;
+  church.add(nave, towerBlock, spire);
+  const churchSpot = { x: -2544, z: -534 };
+  church.position.set(churchSpot.x, terrainHeight(churchSpot.x, churchSpot.z) - 0.4, churchSpot.z);
+  church.rotation.y = 0.5;
+  group.add(church);
+  const stallWood = new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: 0.95 });
+  const awningColours = [0xc23b2e, 0xf0e3c2, 0x2e7c6e];
+  for (let i = 0; i < 6; i += 1) {
+    const a = (i / 6) * Math.PI * 2 + 0.4;
+    const sx = PLAZA.x + Math.cos(a) * 11.5;
+    const sz = PLAZA.z + Math.sin(a) * 11.5;
+    const stall = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.9, 2.4), stallWood);
+    base.position.y = 0.95;
+    const awning = new THREE.Mesh(
+      new THREE.BoxGeometry(3.9, 0.22, 3.1),
+      new THREE.MeshStandardMaterial({ color: awningColours[i % awningColours.length], roughness: 0.9 }),
+    );
+    awning.position.y = 2.35;
+    awning.rotation.z = 0.1;
+    stall.add(base, awning);
+    stall.position.set(sx, terrainHeight(sx, sz), sz);
+    stall.rotation.y = random() * Math.PI;
+    group.add(stall);
+  }
 
   const lighthouse = new THREE.Group();
   const baseY = terrainHeight(LANDMARKS.lighthouse.x, LANDMARKS.lighthouse.z);
@@ -413,8 +498,7 @@ function buildTown(random) {
   lighthouse.position.set(LANDMARKS.lighthouse.x, baseY, LANDMARKS.lighthouse.z);
   group.add(lighthouse);
 
-  // The rotating beam: two translucent cones nose-to-nose at the lamp, sweeping the harbour
-  // and the town shore. Additive and depthless, so they read as light, not as scenery.
+  // The rotating beam: two additive translucent cones at the lamp.
   const beamMaterial = new THREE.MeshBasicMaterial({
     color: 0xffd9a0, transparent: true, opacity: 0.15,
     blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, fog: false,
@@ -432,6 +516,119 @@ function buildTown(random) {
   return { group, lamp, beam: beamPivot, beamMaterial };
 }
 
+/** The fishing village on Palma's south-eastern shore: a smaller scatter of lit-window houses. */
+function buildVillage(random) {
+  const facades = [
+    facadeTexture(random, '#d9c6a5', 0.5, 'grid'),
+    facadeTexture(random, '#e0b49a', 0.58, 'grid'),
+  ];
+  const placements = [];
+  let guard = 0;
+  while (placements.length < 30 && guard < 2000) {
+    guard += 1;
+    const angle = random() * Math.PI * 2;
+    const dist = Math.sqrt(random()) * 125;
+    const x = LANDMARKS.village.x + Math.cos(angle) * dist;
+    const z = LANDMARKS.village.z + Math.sin(angle) * dist * 0.85;
+    const h = terrainHeight(x, z);
+    if (h < 2.5 || h > 30) continue;
+    if (distToRoads(x, z) < 8) continue;
+    placements.push({
+      x,
+      z,
+      ground: h,
+      w: randomRange(random, 10, 20),
+      d: randomRange(random, 10, 20),
+      height: randomRange(random, 8, 19),
+      rot: randomRange(random, 0, Math.PI),
+      variant: Math.floor(random() * facades.length),
+      shade: randomRange(random, 0.8, 1.05),
+    });
+  }
+  return renderBuildings(facades, placements, random);
+}
+
+/** The dirt roads as ribbons riding the height function, smoothed through their waypoints. */
+function buildRoads() {
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({ color: 0x9c8a66, roughness: 1, side: THREE.DoubleSide });
+  for (const path of ROAD_PATHS) {
+    const curve = new THREE.CatmullRomCurve3(path.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+    const count = Math.max(10, Math.ceil(curve.getLength() / 14));
+    const points = curve.getSpacedPoints(count);
+    const positions = [];
+    const indices = [];
+    points.forEach((p, i) => {
+      const next = points[Math.min(i + 1, points.length - 1)];
+      const prev = points[Math.max(i - 1, 0)];
+      const tx = next.x - prev.x;
+      const tz = next.z - prev.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      const px = (tz / tl) * 3.6;
+      const pz = (-tx / tl) * 3.6;
+      const y = Math.max(
+        terrainHeight(p.x, p.z),
+        terrainHeight(p.x + px, p.z + pz),
+        terrainHeight(p.x - px, p.z - pz),
+      ) + 0.22;
+      positions.push(p.x - px, y, p.z - pz, p.x + px, y, p.z + pz);
+      if (i > 0) {
+        const a = (i - 1) * 2;
+        indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+      }
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    group.add(new THREE.Mesh(geometry, material));
+  }
+  return group;
+}
+
+/** The harbour pier: timber deck on posts, crates and barrels, a lamp, the coaster alongside. */
+function buildPier(random) {
+  const group = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x7a5c38, roughness: 0.95 });
+  const woodDark = new THREE.MeshStandardMaterial({ color: 0x5f4527, roughness: 0.95 });
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(112, 1.1, 11), wood);
+  deck.position.set(-2840, 1.85, -450);
+  group.add(deck);
+  for (let x = -2792; x >= -2888; x -= 12) {
+    for (const dz of [-4.6, 4.6]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 5.5, 7), woodDark);
+      post.position.set(x, 0, -450 + dz);
+      group.add(post);
+    }
+  }
+  for (let i = 0; i < 5; i += 1) {
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.7, 1.7), i % 2 ? wood : woodDark);
+    crate.position.set(-2812 - i * 7 + randomRange(random, -1.5, 1.5), 3.25, -452 + randomRange(random, -2.4, 2.4));
+    crate.rotation.y = random() * Math.PI;
+    group.add(crate);
+  }
+  const barrelGeometry = new THREE.CylinderGeometry(0.65, 0.65, 1.5, 9);
+  for (let i = 0; i < 6; i += 1) {
+    const barrel = new THREE.Mesh(barrelGeometry, i % 2 ? woodDark : wood);
+    barrel.position.set(-2872 + (i % 3) * 2.2, 3.15, -447 + Math.floor(i / 3) * 2.4);
+    group.add(barrel);
+  }
+  const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 5, 6), woodDark);
+  lampPost.position.set(-2892, 4.9, -450);
+  group.add(lampPost);
+  const lampBall = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffe9a8, emissive: 0xffc95e, emissiveIntensity: 2.6 }),
+  );
+  lampBall.position.set(-2892, 7.6, -450);
+  group.add(lampBall);
+  const coaster = buildBoat(0xd9c6a5, 0x2e5a7c, 8);
+  coaster.scale.setScalar(2.6);
+  coaster.position.set(-2852, 0, -439);
+  group.add(coaster);
+  return group;
+}
+
 /** Low-poly pines scattered on the grass, kept clear of the strips and the town. */
 function buildTrees(random) {
   const cone = new THREE.ConeGeometry(3.4, 10, 6);
@@ -447,7 +644,9 @@ function buildTrees(random) {
     const h = terrainHeight(x, z);
     if (h < 5 || h > 100) continue;
     if (Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < 900) continue;
-    if (Math.hypot(x - LANDMARKS.town.x, z - LANDMARKS.town.z) < 330) continue;
+    if (Math.hypot(x - LANDMARKS.town.x, z - LANDMARKS.town.z) < 345) continue;
+    if (Math.hypot(x - LANDMARKS.village.x, z - LANDMARKS.village.z) < 150) continue;
+    if (distToRoads(x, z) < 7) continue;
     let nearStrip = false;
     for (const runway of RUNWAYS) {
       const { u, v } = runwayLocal(runway, x, z);
@@ -488,11 +687,7 @@ function buildClouds(random) {
   return group;
 }
 
-/**
- * The sun's glitter path on the sea: a long additive sheet lying on the water along the sun's
- * azimuth, textured with a canvas of sparkle dashes — brightest down its centre line, fading
- * across its width and along its length. It is the road of light a low sun draws on open water.
- */
+/** The sun's glitter path: an additive sparkle sheet along the sun's azimuth. */
 function buildGlitter(sunDir) {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -539,9 +734,7 @@ function buildGlitter(sunDir) {
 }
 
 /**
- * One harbour boat at anchor: a simple hull with a wedge bow, a cabin, a mast, and the pale
- * wash of water it sits in — a soft foam patch under the hull and a short wake streak astern,
- * the mark of a boat swinging gently against its mooring in the evening tide.
+ * One harbour boat at anchor: hull, cabin, mast, and the foam wash it sits in.
  */
 function buildBoat(hullColour, trimColour, headingDeg) {
   const group = new THREE.Group();
@@ -589,9 +782,7 @@ function buildBoat(hullColour, trimColour, headingDeg) {
 }
 
 /**
- * A fading wake trail for a boat under way: a long flat sheet astern whose canvas alpha runs
- * from a bright churn at the stern to nothing at the tail — the road a moving hull writes on
- * still water, and leaves behind it.
+ * A fading wake trail: a flat sheet astern, alpha running from churn to nothing.
  */
 function buildWakeTrail() {
   const canvas = document.createElement('canvas');
@@ -623,10 +814,7 @@ function buildWakeTrail() {
 }
 
 /**
- * The harbour's boats: four small craft at anchor, one larger coaster anchored off the photo
- * gates, and the evening ferry under way on its slow loop around the anchorage, trailing its
- * wake. The anchored boats get a mooring phase each for the bob; the ferry's loop is a pure
- * function of the clock (see createWorld's update), so staged frames agree with play.
+ * The harbour's boats: four at anchor, a coaster, and the ferry on its clock-driven loop.
  */
 function buildHarbour() {
   const group = new THREE.Group();
@@ -673,11 +861,7 @@ function buildBird(material) {
   return { bird, wingL, wingR };
 }
 
-/**
- * A flock of gulls working a thermal: each bird holds its own circle and phase around a
- * centre near the coast, wings beating slowly. Positions are a pure function of the clock,
- * so a staged frame shows the flock where play would.
- */
+/** A flock of gulls: each bird circles on its own phase, a pure function of the clock. */
 function buildFlock(centre, radius, count, phaseBase) {
   const group = new THREE.Group();
   const material = new THREE.MeshBasicMaterial({ color: 0x2e2a26, side: THREE.DoubleSide });
@@ -698,8 +882,7 @@ function buildFlock(centre, radius, count, phaseBase) {
 }
 
 /**
- * Build the whole world into the scene. Returns the pieces the game loop animates plus the
- * ground query the flight model flies against.
+ * Build the whole world into the scene; returns the animated pieces plus the ground query.
  */
 export function createWorld(scene, seed) {
   const random = createRandom(seed ^ 0x9e3779b9);
@@ -745,6 +928,9 @@ export function createWorld(scene, seed) {
 
   const town = buildTown(random);
   scene.add(town.group);
+  scene.add(buildVillage(random));
+  scene.add(buildRoads());
+  scene.add(buildPier(random));
   scene.add(buildTrees(random));
   const clouds = buildClouds(random);
   scene.add(clouds);
@@ -770,7 +956,7 @@ export function createWorld(scene, seed) {
         boat.rotation.z = Math.sin(t * 0.6 + phase) * 0.02;
         boat.rotation.x = Math.cos(t * 0.5 + phase) * 0.015;
       }
-      // The ferry works its loop: position and heading from the clock, a gentle roll on top.
+      // The ferry works its loop from the clock, a gentle roll on top.
       const fa = FERRY_LOOP.phase + (t * Math.PI * 2) / FERRY_LOOP.period;
       const fx = FERRY_LOOP.x + Math.cos(fa) * FERRY_LOOP.rx;
       const fz = FERRY_LOOP.z + Math.sin(fa) * FERRY_LOOP.rz;
@@ -778,7 +964,7 @@ export function createWorld(scene, seed) {
       const fvz = Math.cos(fa) * FERRY_LOOP.rz;
       harbour.ferry.position.set(fx, Math.sin(t * 0.8 + 2.2) * 0.1, fz);
       harbour.ferry.rotation.set(Math.cos(t * 0.5 + 2.2) * 0.012, Math.atan2(-fvz, fvx), Math.sin(t * 0.6 + 2.2) * 0.018);
-      // The flocks circle their thermals, each bird on its own circle, wings beating.
+      // The flocks circle their thermals, wings beating.
       for (const flock of flocks) {
         for (const b of flock.birds) {
           const a = b.a0 + t * b.speed;

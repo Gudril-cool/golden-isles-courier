@@ -1,20 +1,23 @@
-// Golden Isles Courier — boot and the one loop. The world, the aeroplane and the mission are
-// stepped in fixed 1/60 s slices; the camera (chase or cockpit) and the HUD follow the flight
-// state; screens (mission board, pause, results) are DOM over the canvas. A ?shot=name URL
-// stages one frozen moment of play instead, paints it and sets window.__shotReady.
+// Golden Isles Courier — boot and the one loop. World, aeroplane and mission step in fixed
+// 1/60 s slices; the camera and HUD follow the flight state. A ?shot=name URL instead stages
+// one frozen moment of play and sets window.__shotReady.
 import * as THREE from 'three';
 import { createWorld, getRunway } from './world.js';
-import { createAircraft } from './aircraft.js';
+import { createAircraft, AIRCRAFT, AIRCRAFT_ORDER } from './aircraft.js';
 import {
-  createFlight, resetFlight, stepFlight, poseAircraft,
+  createFlight, resetFlight, stepFlight, poseAircraft, applyPerformance,
   EVENT_TOOK_OFF, EVENT_TOUCHDOWN, EVENT_CRASHED, EVENT_DITCHED,
 } from './flight.js';
 import { MISSIONS, startMission } from './missions.js';
-import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, ACTION_MISSION_1, ACTION_MISSION_2, ACTION_MISSION_3, ACTION_MISSION_4, ACTION_MISSION_5, ACTION_DROP, ACTION_MENU } from './input.js';
+import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_CAMERA, ACTION_MUTE, ACTION_MISSION_1, ACTION_MISSION_2, ACTION_MISSION_3, ACTION_MISSION_4, ACTION_MISSION_5, ACTION_DROP, ACTION_MENU, ACTION_PLANE_PREV, ACTION_PLANE_NEXT, ACTION_WEATHER } from './input.js';
 import { createHud, formatTime } from './hud.js';
 import { createInstruments } from './instruments.js';
 import { createAudio } from './audio.js';
 import { createWind } from './wind.js';
+import { createWeather, WEATHER_ORDER } from './weather.js';
+import { createTraffic } from './traffic.js';
+import { createPilotRank } from './pilot.js';
+import { createMap } from './map.js';
 import { describeShot } from './shots.js';
 
 const STEP = 1 / 60;
@@ -33,18 +36,94 @@ renderer.toneMappingExposure = 1.12;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 24000);
 const world = createWorld(scene, seed);
-const aircraft = createAircraft();
+let planeId = 'kestrel';
+let aircraft = createAircraft(planeId);
 scene.add(aircraft.group);
 const flight = createFlight();
 resetFlight(flight, getRunway('palma'), 100);
+applyPerformance(flight, AIRCRAFT[planeId].perf);
 poseAircraft(flight, aircraft.group);
 
 const input = createInput();
 const hud = createHud();
 const instruments = createInstruments(document.getElementById('panel'));
 const audio = createAudio();
-const wind = createWind();
+const weather = createWeather(scene);
+const wind = createWind(weather);
+const traffic = createTraffic(scene);
+const pilot = createPilotRank();
+const islesMap = createMap(document.getElementById('map-canvas'), world);
 let nowSec = 0;
+
+/** Dress the light and the haze for the live weather preset. */
+function applyWeatherLook() {
+  const preset = weather.current();
+  renderer.toneMappingExposure = preset.exposure;
+  if (scene.fog) {
+    scene.fog.near = preset.fogNear;
+    scene.fog.far = preset.fogFar;
+  }
+}
+
+/** Paint the title screen's hangar: which aeroplane and weather stand chosen, and the rank. */
+function refreshHangar() {
+  for (const btn of document.querySelectorAll('[data-plane]')) {
+    btn.classList.toggle('selected', btn.dataset.plane === planeId);
+  }
+  for (const btn of document.querySelectorAll('[data-wx]')) {
+    btn.classList.toggle('selected', btn.dataset.wx === weather.presetId);
+  }
+  const variant = AIRCRAFT[planeId];
+  const bars = (n) => '▰'.repeat(n) + '▱'.repeat(5 - n);
+  document.getElementById('plane-line').textContent =
+    `${variant.name} — ${variant.role}. ${variant.blurb} ` +
+    `SPD ${bars(variant.stats.spd)} · CLIMB ${bars(variant.stats.clb)} · RANGE ${bars(variant.stats.rng)}`;
+  document.getElementById('title-rank').textContent = `PILOT RANK — ${pilot.label()}`;
+}
+
+/** Choose the aeroplane: rebuild the airframe in its livery and fit its performance. */
+function selectPlane(id) {
+  if (!AIRCRAFT[id]) return;
+  planeId = id;
+  scene.remove(aircraft.group);
+  aircraft = createAircraft(planeId);
+  scene.add(aircraft.group);
+  applyPerformance(flight, AIRCRAFT[planeId].perf);
+  poseAircraft(flight, aircraft.group);
+  hud.setAircraft(AIRCRAFT[planeId].name);
+  refreshHangar();
+}
+
+/** Step the hangar choice one aeroplane along (or back). */
+function cyclePlane(step) {
+  const idx = AIRCRAFT_ORDER.indexOf(planeId);
+  selectPlane(AIRCRAFT_ORDER[(idx + step + AIRCRAFT_ORDER.length) % AIRCRAFT_ORDER.length]);
+}
+
+/** Choose the weather preset: the wind, the light, the HUD chip and the hangar agree. */
+function setWeatherById(id) {
+  weather.set(id);
+  hud.setWeather(weather.current().name);
+  applyWeatherLook();
+  refreshHangar();
+}
+
+/** Step the weather one preset along the title screen's cycle. */
+function cycleWeather() {
+  const idx = WEATHER_ORDER.indexOf(weather.presetId);
+  setWeatherById(WEATHER_ORDER[(idx + 1) % WEATHER_ORDER.length]);
+}
+
+hud.setAircraft(AIRCRAFT[planeId].name);
+hud.setWeather(weather.current().name);
+applyWeatherLook();
+refreshHangar();
+for (const btn of document.querySelectorAll('[data-plane]')) {
+  btn.addEventListener('click', () => selectPlane(btn.dataset.plane));
+}
+for (const btn of document.querySelectorAll('[data-wx]')) {
+  btn.addEventListener('click', () => setWeatherById(btn.dataset.wx));
+}
 
 const titleScreen = document.getElementById('screen-title');
 const endScreen = document.getElementById('screen-end');
@@ -81,6 +160,7 @@ function beginMission(id) {
   const def = MISSIONS.find((m) => m.id === id) ?? MISSIONS[0];
   mission = startMission(def, scene);
   resetFlight(flight, getRunway('palma'), def.fuel);
+  applyPerformance(flight, AIRCRAFT[planeId].perf);
   cameraMode = 'chase';
   wasStalled = false;
   screen = 'flying';
@@ -94,11 +174,16 @@ function beginMission(id) {
 
 function endMission(outcome) {
   screen = 'over';
+  // Bank the sortie's score with the pilot's standing — the rank climbs across the evening.
+  const banked = pilot.add(mission ? mission.score : 0);
   document.getElementById('end-title').textContent = outcome.title;
   document.getElementById('end-detail').textContent = outcome.detail;
   document.getElementById('end-stats').innerHTML =
     `Score <b>${Math.round(mission ? mission.score : 0)}</b> · Time <b>${formatTime(mission ? mission.time : 0)}</b><br>` +
-    `Fuel left <b>${Math.round(flight.fuel)}%</b> · Hull <b>${Math.round(flight.hull)}%</b>`;
+    `Fuel left <b>${Math.round(flight.fuel)}%</b> · Hull <b>${Math.round(flight.hull)}%</b><br>` +
+    `Pilot rank <b>${pilot.label()}</b>` +
+    (banked.promoted ? `<br><b>PROMOTED — ${banked.rank}!</b>` : '');
+  refreshHangar();
   showScreen('over');
   if (outcome.success) audio.fanfare();
   else audio.fail();
@@ -170,7 +255,10 @@ function presentEvents(events, happenings) {
 function handleActions() {
   const actions = input.takeActions();
   if (screen === 'title') {
-    if (actions & ACTION_MISSION_1) beginMission(1);
+    if (actions & ACTION_PLANE_NEXT) cyclePlane(1);
+    else if (actions & ACTION_PLANE_PREV) cyclePlane(-1);
+    else if (actions & ACTION_WEATHER) cycleWeather();
+    else if (actions & ACTION_MISSION_1) beginMission(1);
     else if (actions & ACTION_MISSION_2) beginMission(2);
     else if (actions & ACTION_MISSION_3) beginMission(3);
     else if (actions & ACTION_MISSION_4) beginMission(4);
@@ -223,6 +311,7 @@ function updateCamera(dt, snap = false) {
   if (screen === 'title') {
     aircraft.setCockpitView(false);
     instruments.setVisible(false);
+    hud.setAttitudeVisible(false);
     document.getElementById('hud-systems').style.display = '';
     titleOrbit += dt * 0.07;
     _desired.set(
@@ -242,12 +331,14 @@ function updateCamera(dt, snap = false) {
     camera.quaternion.copy(_planeQuat);
     aircraft.setCockpitView(true);
     instruments.setVisible(true);
+    hud.setAttitudeVisible(false);
     document.getElementById('hud-systems').style.display = 'none';
     return;
   }
 
   aircraft.setCockpitView(false);
   instruments.setVisible(false);
+  hud.setAttitudeVisible(true);
   document.getElementById('hud-systems').style.display = '';
   _desired.copy(flight.pos).addScaledVector(_fwd, -13.5);
   _desired.y += 3.6;
@@ -288,15 +379,21 @@ function updateMarker() {
 /** One render of the current state with every overlay painted. */
 function drawFrame(dt, t) {
   world.update(dt, t);
+  traffic.update(t);
+  weather.update(dt, t, flight.pos);
+  applyWeatherLook();
   aircraft.spinPropeller(dt, screen === 'flying' || screen === 'paused' ? flight.throttle : 0.25);
   poseAircraft(flight, aircraft.group);
   updateCamera(dt);
   hud.updateFlight(flight);
+  hud.drawAttitude(flight);
   hud.updateWind(wind.sample(t), flight.heading);
   if (mission) {
     hud.updateScore(mission.score, mission.time);
     hud.setMission(mission.def.name, mission.goalText());
+    hud.setObjectives(`MISSION ${mission.def.id} OF 5`, mission.objectives(flight));
   }
+  islesMap.draw(flight, mission && screen === 'flying' ? mission.target() : null);
   hud.tick();
   updateMarker();
   if (cameraMode === 'cockpit' && screen !== 'title') instruments.draw(flight);
@@ -340,6 +437,12 @@ function runGame() {
 function runShot(name) {
   const desc = describeShot(name) ?? describeShot('cover');
   showScreen('none');
+  // The staged moment flies its own aeroplane and weather when the descriptor names them;
+  // traffic rides along unless the descriptor (or a ?traffic=off comparison pass) hides it.
+  if (desc.plane) selectPlane(desc.plane);
+  setWeatherById(desc.weather ?? 'BREEZY');
+  const showTraffic = desc.traffic !== false && params.get('traffic') !== 'off';
+  traffic.group.visible = showTraffic;
   const def = MISSIONS.find((m) => m.id === desc.mission);
   mission = startMission(def, scene);
   mission.ringIndex = desc.ringIndex;
@@ -348,9 +451,8 @@ function runShot(name) {
   mission.leftGround = true;
   if (desc.gateIndex) {
     // Harbour frames are already in the pouch. Pin each thumbnail the way play does —
-    // hud.addPhoto copies the game's own canvas — so pose the crossing at every gate that
-    // was snapped and render that moment; the final pose below then overwrites the flight
-    // state, and the mission update there settles the taken gates' beams to grey.
+    // hud.addPhoto copies the game's own canvas — so pose and render every snapped gate's
+    // crossing; the final pose below then overwrites the flight state.
     mission.gateIndex = desc.gateIndex;
     mission.photos = desc.gateIndex;
     const scores = desc.photoScores ?? [desc.photoPoints];
@@ -367,6 +469,8 @@ function runShot(name) {
       screen = 'flying';
       poseAircraft(flight, aircraft.group);
       world.update(0, 1.4);
+      traffic.update(1.4);
+      weather.update(0, 1.4, flight.pos);
       updateCamera(0.016, true);
       renderer.render(scene, camera);
       hud.addPhoto(scores[Math.min(i, scores.length - 1)]);
@@ -387,10 +491,15 @@ function runShot(name) {
   mission.update(0.016, flight, 1.4);
   poseAircraft(flight, aircraft.group);
   world.update(0, 1.4);
+  traffic.update(1.4);
+  weather.update(0, 1.4, flight.pos);
   updateCamera(0.016, true);
   hud.updateFlight(flight);
+  hud.drawAttitude(flight);
   hud.updateScore(mission.score, mission.time);
   hud.setMission(def.name, mission.goalText());
+  hud.setObjectives(`MISSION ${def.id} OF 5`, mission.objectives(flight));
+  islesMap.draw(flight, mission.target());
   updateMarker();
   hud.updateWind(wind.sample(1.4), flight.heading);
   if (cameraMode === 'cockpit') {
@@ -410,9 +519,16 @@ function runShot(name) {
 if (shotName) runShot(shotName);
 else runGame();
 
-// A handle for automated play-testing: the live scene, camera and flight state, so a test
-// harness can watch the aeroplane move and read the ground it flies over.
+// A handle for automated play-testing: the live scene, camera and flight state.
 window.__game = {
-  scene, camera, renderer, flight, world, aircraft,
+  scene, camera, renderer, flight, world, traffic, weather, pilot, wind,
+  get aircraft() { return aircraft; },
   get mission() { return mission; },
+  hangar: {
+    selectPlane,
+    setWeather: setWeatherById,
+    pilot,
+    get planeId() { return planeId; },
+    get weatherId() { return weather.presetId; },
+  },
 };

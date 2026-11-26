@@ -1,10 +1,5 @@
-// The five sorties of the Golden Isles Courier, and the rules that judge them. A mission owns
-// its glowing rings (built as torus meshes facing along the course), its harbour photo gates
-// (post-and-beam frames standing in the anchorage) or its lighthouse supply pad, watches the
-// flight state for ring passes, photo passes, crate drops and arrivals, and turns what
-// happens into score, messages and an ending: threading a ring pays, a low centred photo
-// pays by the quality of the shot, a crate in the bullseye pays most of all, landing the mail
-// at Farrel pays more, and bending the aeroplane is priced by the flight model's own report.
+// The five sorties and the rules that judge them. A mission owns its rings, photo gates or
+// supply pad, watches the flight, and scores what happens.
 import * as THREE from 'three';
 import { LANDMARKS, getRunway } from './world.js';
 import { createSupplyRun } from './supply.js';
@@ -31,11 +26,7 @@ function volcanoCourse() {
   ];
 }
 
-/**
- * The harbour photo gates as [x, z, headingDeg] triples over Port Aurelia's anchorage: a loose
- * triangle down the outer harbour, back up the far shore and home past the town. The heading is
- * the direction of travel the frame expects; the posts stand in open water throughout.
- */
+/** The harbour photo gates as [x, z, headingDeg] triples over Port Aurelia's anchorage. */
 function photoCourse() {
   return [
     [-2930, -300, 255],
@@ -116,8 +107,7 @@ function buildRing(position, normal) {
 
 /**
  * Build one photo gate: two striped posts on harbour pontoons, a glowing beam across the top
- * and a shutter plane between them that flashes when a frame is taken. The frame stands in the
- * sea and faces along its heading, so the pilot flies through the rectangle it draws.
+ * and a shutter plane between them that flashes when a frame is taken.
  */
 function buildPhotoGate(x, z, headingDeg) {
   const group = new THREE.Group();
@@ -160,11 +150,7 @@ function buildPhotoGate(x, z, headingDeg) {
   return group;
 }
 
-/**
- * Start a mission: build its rings or photo gates into the scene and return its runtime. The
- * runtime's update(dt, state, t) returns happening objects for the caller to present:
- * { kind: 'ring'|'photo'|'photo-miss', ... } and the terminal { kind: 'complete', ... }.
- */
+/** Start a mission: build its props into the scene and return its runtime. */
 export function startMission(def, scene) {
   const rings = [];
   if (def.kind === 'rings') {
@@ -220,6 +206,50 @@ export function startMission(def, scene) {
       return new THREE.Vector3(farrel.x, farrel.elev + 12, farrel.z);
     },
 
+    /** The objectives checklist for this moment: live lines { text, done }, done ones ticked. */
+    objectives(state) {
+      const par = `${Math.floor(def.parSeconds / 60)}:${String(def.parSeconds % 60).padStart(2, '0')}`;
+      const fuelLine = { text: `FUEL ${Math.round(state.fuel)}% IN THE TANK`, done: state.fuel <= 0 };
+      if (def.kind === 'rings') {
+        const ring = rings[this.ringIndex];
+        const next = ring
+          ? { text: `NEXT RING — ${Math.round(state.pos.distanceTo(ring.position))} M`, done: false }
+          : { text: 'COURSE COMPLETE', done: true };
+        return [
+          { text: `RINGS ${this.ringIndex}/${rings.length} THREADED`, done: this.ringIndex >= rings.length },
+          next,
+          { text: `TIME BONUS INSIDE ${par}`, done: this.time > def.parSeconds },
+          fuelLine,
+        ];
+      }
+      if (def.kind === 'photo') {
+        const gate = gates[this.gateIndex];
+        const next = gate
+          ? { text: `NEXT GATE — ${Math.round(state.pos.distanceTo(new THREE.Vector3(gate.position.x, 24, gate.position.z)))} M`, done: false }
+          : { text: 'ALL FRAMES IN THE POUCH', done: true };
+        return [
+          { text: `FRAMES ${this.photos}/${gates.length} SNAPPED`, done: this.photos >= gates.length },
+          next,
+          { text: 'FLY LOW — 45–145 FT, CENTRED', done: false },
+          fuelLine,
+        ];
+      }
+      if (def.kind === 'supply') {
+        return [
+          { text: 'TAKE OFF FROM PALMA FIELD', done: this.leftGround },
+          { text: `CRATES AWAY ${supply ? supply.dropped : 0}/3 · ${supply ? supply.cratesLeft : 3} ABOARD`, done: !!supply && supply.dropped >= 3 },
+          { text: 'DROP IN THE RING — MIND THE WIND', done: false },
+          fuelLine,
+        ];
+      }
+      return [
+        { text: 'TAKE OFF FROM PALMA FIELD', done: this.leftGround },
+        { text: 'LAND ON THE FARREL STRIP', done: this.done },
+        { text: 'TOUCH DOWN GENTLY — SINK < 3.5', done: false },
+        fuelLine,
+      ];
+    },
+
     /** The goal line for the HUD banner. */
     goalText() {
       if (def.kind === 'rings') return `Fly the glowing rings — ${this.ringIndex}/${rings.length} threaded`;
@@ -232,10 +262,7 @@ export function startMission(def, scene) {
       return this.leftGround ? 'Land gently on the Farrel strip' : 'Take off from Palma Field, mail aboard';
     },
 
-    /**
-     * The pilot pressed the drop key: on the supply run, let the carried crate go from the
-     * flight state's belly, on the wind as sampled. Returns the happenings to present.
-     */
+    /** The drop key: on the supply run, let the carried crate go on the sampled wind. */
     drop(state, windVector) {
       if (def.kind !== 'supply' || !supply || this.done) return [];
       return supply.dropCrate(state, windVector) ? [{ kind: 'away' }] : [];
@@ -261,8 +288,7 @@ export function startMission(def, scene) {
         }
       }
 
-      // Photo gates breathe the same way: the live frame's beam burns bright, taken frames
-      // settle to a grey smoulder, and a shutter flash fades off the plane that was snapped.
+      // Photo gates breathe the same way: the live frame burns bright, taken ones smoulder.
       for (let i = 0; i < gates.length; i += 1) {
         const { beamMaterial, shutter } = gates[i].userData;
         if (i < this.gateIndex) {

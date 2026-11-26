@@ -13,6 +13,9 @@ export const ACTION_MENU = 128;
 export const ACTION_MISSION_4 = 256;
 export const ACTION_DROP = 512;
 export const ACTION_MISSION_5 = 1024;
+export const ACTION_PLANE_PREV = 2048;
+export const ACTION_PLANE_NEXT = 4096;
+export const ACTION_WEATHER = 8192;
 
 const KEY_ACTIONS = {
   Enter: ACTION_CONFIRM,
@@ -21,6 +24,9 @@ const KEY_ACTIONS = {
   KeyC: ACTION_CAMERA,
   KeyM: ACTION_MUTE,
   KeyB: ACTION_DROP,
+  KeyT: ACTION_WEATHER,
+  ArrowLeft: ACTION_PLANE_PREV,
+  ArrowRight: ACTION_PLANE_NEXT,
   Digit1: ACTION_MISSION_1,
   Digit2: ACTION_MISSION_2,
   Digit3: ACTION_MISSION_3,

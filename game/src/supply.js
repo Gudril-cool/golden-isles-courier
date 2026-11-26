@@ -1,9 +1,7 @@
 // The lighthouse supply drop: a prepared pad beside Port Aurelia's lighthouse, marked with
 // two glowing rings and a pillar of light, and the crates the courier lets go from the air.
-// A released crate keeps the aeroplane's velocity, falls under gravity, drifts a little on
-// the wind, and is judged where it comes to rest — in the inner ring, in the outer ring, on
-// the rocks beyond, or in the drink. This file owns the pad, the crates and that judgement;
-// missions.js owns the sortie around them.
+// A released crate keeps the aeroplane's velocity, falls under gravity, drifts on the wind,
+// and is judged where it rests — inner ring, outer ring, the rocks, or the drink.
 import * as THREE from 'three';
 import { LANDMARKS, terrainHeight } from './world.js';
 
@@ -28,10 +26,9 @@ export function scoreDrop(dist, onLand) {
 }
 
 /**
- * Build the drop pad into the scene: a gravel disc cut into the slope, the two glowing rings
- * painted on it, marker lamps at the outer ring's quarters, a beacon pole, and a translucent
- * pillar of light over the centre so the pilot can find the rock from across the map.
- * Returns the pieces the run animates (the rings' materials, to pulse).
+ * Build the drop pad into the scene: a gravel disc, the two glowing rings, marker lamps, a
+ * beacon pole, and a translucent pillar of light over the centre. Returns the pieces the
+ * run animates (the rings' materials, to pulse).
  */
 export function buildSupplyDrop(scene) {
   const centre = dropZoneCentre();
@@ -120,9 +117,8 @@ export function buildCrate() {
 
 /**
  * Run one supply sortie's hardware: the pad, the crate slung under the aeroplane, and any
- * crate in the air or at rest. dropCrate(state, windVector) lets the carried crate go;
- * update(dt, state, t) steps what is falling and returns the landings it settles, each
- * { grade, points, dist, splash }.
+ * crate in the air or at rest. dropCrate lets the carried crate go; update steps what is
+ * falling and returns the landings it settles, each { grade, points, dist, splash }.
  */
 export function createSupplyRun(scene) {
   const pad = buildSupplyDrop(scene);

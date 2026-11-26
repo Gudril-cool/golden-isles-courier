@@ -5,8 +5,9 @@
 // and writes /output/dossier.json, the summary the judge reads, with the vendored make.fun
 // library. The game: a sunset courier flight over a low-poly archipelago — five missions
 // (ring runs, an island mail delivery, a harbour photo run and a lighthouse supply drop),
-// a working cockpit panel, fuel, hull and a veering wind to manage, and landings that are
-// judged as firmly as they are flown.
+// three hangar aeroplanes with their own performance, three weathers (calm, breeze and a
+// gusting storm), a pilot rank that climbs with every sortie, a working cockpit panel, fuel,
+// hull and a veering wind to manage, and landings that are judged as firmly as they are flown.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
